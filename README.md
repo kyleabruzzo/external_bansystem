@@ -1,42 +1,54 @@
+# External Ban System for FiveM
 
-# External Ban System
+![Main Banner](https://i.ibb.co/Y48BjDJC/Medal-9-Kq-Wzn-Yje-T-Photoroom.png)
 
-![Banner](https://i.ibb.co/Y48BjDJC/Medal-9-Kq-Wzn-Yje-T-Photoroom.png)
-
-## Overview
-
-External Ban System is a comprehensive ban management solution for FiveM servers, offering a modern user interface, powerful ban controls, and extensive customization options. This resource makes it easy for server administrators to manage player bans with advanced features like offline banning, ban history tracking, and Discord webhook integration.
-
-## Showcase Video
-
-[![Showcase Video](https://img.youtube.com/vi/2C2didQFnbo/0.jpg)](https://www.youtube.com/watch?v=2C2didQFnbo)
+A comprehensive ban management solution for FiveM servers with a sleek UI, offline banning capabilities, and extensive customization options.
 
 ## Features
 
-- **Elegant User Interface**: Clean, responsive design with intuitive controls
-- **Real-time Ban Management**: Ban, unban, and edit existing bans with ease
-- **Advanced Player Verification**: Detailed connection screens with ban history checks
-- **Offline Banning System**: Ban players even when they're not connected
-- **Customizable Ban Durations**: From hours to permanent bans with a user-friendly selection system
-- **Discord Webhook Integration**: Automatic notifications for all ban actions
-- **Multi-identifier Support**: Ban by license, steam, discord, IP, and more
-- **Ban Appeal System**: Configurable appeal link and information for banned players
-- **Admin Permission System**: Works with ESX, QB-Core, and ACE permissions
-- **Detailed Ban Records**: Track ban history and manage all active bans in one place
+* **Elegant User Interface**: Modern, responsive design with intuitive controls
+* **Real-time Ban Management**: Ban, unban, and edit existing bans with ease
+* **Advanced Player Verification**: Detailed connection screens with ban history checks
+* **Offline Banning System**: Ban players even when they're not connected
+* **Customizable Ban Durations**: From hours to permanent bans with a user-friendly selection system
+* **Discord Webhook Integration**: Automatic notifications for all ban actions
+* **Multi-identifier Support**: Ban by license, steam, discord, IP, and more
+* **Ban Appeal System**: Configurable appeal link and information for banned players
+* **Admin Permission System**: Works with ESX, QB-Core, and ACE permissions
+* **Detailed Ban Records**: Track ban history and manage all active bans in one place
 
 ## Preview
 
-![Ban Menu](https://i.imgur.com/D7gLdBb.png)
-![Ban List](https://i.imgur.com/hjTnv91.png)
-![Offline Ban](https://i.imgur.com/NcW72cn.png)
+### Banned Player Screen
+![Banned Screen](https://r2.e-z.host/50178759-6a77-461c-84d2-9262b3c5465f/w05z6yct.gif)
+
+### Successful Connection Screen
+![Non Banned Screen](https://r2.e-z.host/50178759-6a77-461c-84d2-9262b3c5465f/ojpvbmyy.gif)
+
+### Ban Message
+![Ban Message](https://i.imgur.com/8UE4vQR.png)
+
+### Admin Interface
+
+#### Main Ban Screen
+![Main Screen](https://i.imgur.com/Qa9UApo.png)
+
+#### Offline Ban Screen
+![Offline Ban](https://i.imgur.com/OVoJoqc.png)
+
+#### Active Bans List
+![Active Bans List](https://i.imgur.com/kVLO2iA.png)
+
+#### Edit Ban Modal
+![Edit Ban Modal](https://i.imgur.com/SDXjrH9.png)
 
 ## Installation
 
 1. Download the latest release
-2. Extract the folder to your server's resources directory
-3. Add `ensure external_bansystem` to your server.cfg
-4. Configure the `config.lua` and `secure_config.lua` files
-5. Restart your server
+2. Extract to your server's resources directory
+3. Configure the webhook URLs in `secure_config.lua`
+4. Add `ensure external_bansystem` to your server.cfg
+
 
 ## Configuration
 
@@ -44,12 +56,12 @@ External Ban System is a comprehensive ban management solution for FiveM servers
 
 ```lua
 return {
-    Debug = false,                     -- Enable debug mode
-    AdminOnly = true,                  -- Restrict to admins only
-    AdminGroups = {"admin", "mod"},    -- Admin groups with permission
-    Keybind = "F10",                   -- Keybind to open the ban menu
+    Debug = false,
+    AdminOnly = true,
+    AdminGroups = {"admin", "mod"},
+    Keybind = "F10",
     
-    IdentifierPriority = {            -- Order of identifier priority
+    IdentifierPriority = {
         "license",
         "steam",
         "discord",
@@ -57,31 +69,24 @@ return {
     },
     
     Commands = {
-        ban = "ban",                  -- Ban command
-        unban = "unban",              -- Unban command
+        ban = "ban",
+        unban = "unban",
     },
     
     Webhook = {
         botName = "External Ban System",
-        avatarUrl = "https://i.imgur.com/xxxxxxxxx.png", 
+        avatarUrl = "https://i.imgur.com/xxxxxxxxx.png",
         footerText = "External Ban System • Powered by your_server_name",
-        footerIcon = "https://i.imgur.com/xxxxxxxxx.png", 
+        footerIcon = "https://i.imgur.com/xxxxxxxxx.png",
         color = {
-            ban = 16711680,      -- Red color for ban webhooks
-            unban = 65280,       -- Green color for unban webhooks
-            edit = 16776960      -- Yellow color for edit webhooks
+            ban = 16711680,      -- Red
+            unban = 65280,       -- Green
+            edit = 16776960      -- Yellow
         }
     },
     
     Messages = {
-        banUsage = "Usage: /ban [id] [duration (optional)] [reason]",
-        unbanUsage = "Usage: /unban [ban_id]",
-        playerNotFound = "Player not found.",
-        identifierError = "Could not find a valid identifier for this player.",
-        banned = "You have been banned.\nBan ID: %s\nReason: %s\nBanned by: %s\nBan Date: %s\nDuration: %s",
-        unbanSuccess = "%s has been unbanned.",
-        banEditSuccess = "Ban for %s has been updated.",
-        notBanned = "This identifier is not banned or already unbanned.",
+        
     },
     
     UI = {
@@ -93,19 +98,7 @@ return {
         },
         
         durations = {
-            {label = "Permanent", value = "5475d"},
-            {label = "1 Hour", value = "1h"},
-            {label = "6 Hours", value = "6h"},
-            {label = "12 Hours", value = "12h"},
-            {label = "1 Day", value = "1d"},
-            {label = "3 Days", value = "3d"},
-            {label = "7 Days", value = "7d"},
-            {label = "14 Days", value = "14d"},
-            {label = "30 Days", value = "30d"},
-            {label = "60 Days", value = "60d"},
-            {label = "90 Days", value = "90d"},
-            {label = "6 Months", value = "180d"},
-            {label = "1 Year", value = "365d"}
+            
         }
     },
 }
@@ -128,7 +121,6 @@ Links = {
 - `/ban [id] [duration] [reason]` - Ban a player
   - Example: `/ban 1 7d Griefing`
   - Duration formats: 1h (hour), 1d (day), 1w (week), 1m (month), 1y (year), perm or permanent
-  - Omitting duration will result in a permanent ban
 
 - `/unban [ban_id]` - Unban a player
   - Example: `/unban ABC-123-XYZ`
@@ -140,17 +132,21 @@ Links = {
 - Offline Ban: Enter player identifiers and ban information
 - Ban List: View, edit, or unban players from the list
 
+## Framework Support
+
+- ✅ ESX Legacy
+- ✅ QB-Core
+- ✅ Standalone (ACE Permissions)
+
 ## Requirements
 
 - oxmysql
-- ESX/QBCore
+- ESX/QB
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE)
-
-
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Support
 
-If you need help or have suggestions, please open an issue on GitHub or contact me on Discord: kyle337.
+Need help? Found a bug? Have a feature request? Open an issue or reach out on Discord.
