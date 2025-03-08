@@ -7,6 +7,8 @@
 
 External Ban System is a comprehensive ban management solution for FiveM servers, offering a modern user interface, powerful ban controls, and extensive customization options. This resource makes it easy for server administrators to manage player bans with advanced features like offline banning, ban history tracking, and Discord webhook integration.
 
+## Showcase Video
+
 [![Showcase Video](https://img.youtube.com/vi/2C2didQFnbo/0.jpg)](https://www.youtube.com/watch?v=2C2didQFnbo)
 
 ## Features
