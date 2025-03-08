@@ -7,7 +7,9 @@ local colors = {
     error = "^1",
     success = "^2",
     warn = "^3",
-    info = "^5"
+    info = "^5",
+    uptodate = "^4",   
+    outdated = "^6"    
 }
 
 local resourceName = ("[^6%s^7]"):format(GetCurrentResourceName())
@@ -51,6 +53,14 @@ end
 
 function logger:info(message, ...)
     logIfDebug(colors.info, "[INFO] ", message, ...)
+end
+
+function logger:versionCheckerSuccess(message, ...)
+    logIfDebug(colors.uptodate, "[UPTODATE] ", message, ...)
+end
+
+function logger:versionCheckerError(message, ...)
+    logIfDebug(colors.outdated, "[OUTDATED] ", message, ...)
 end
 
 return logger
