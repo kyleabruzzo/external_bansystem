@@ -1,4 +1,4 @@
-```markdown
+
 # External Ban System
 
 ![Banner](https://i.ibb.co/Y48BjDJC/Medal-9-Kq-Wzn-Yje-T-Photoroom.png)
@@ -153,6 +153,3 @@ This project is licensed under the [MIT License](LICENSE)
 ## Support
 
 If you need help or have suggestions, please open an issue on GitHub or contact me on Discord: kyle337.
-```
-
-Feel free to customize this README with your personal information, actual screenshot URLs, and a YouTube showcase video when you have those ready. The template provides a comprehensive overview of your system, installation instructions, configuration examples, and usage details that will help users understand and implement your ban system effectively.
