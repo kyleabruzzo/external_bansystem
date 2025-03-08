@@ -29,7 +29,7 @@ return {
     },
     
     Messages = {
-        banUsage = "Usage: /ban [id] [duration (optional)] [reason]",
+        banUsage = "Usage: /ban [id] [duration] [reason]",
         unbanUsage = "Usage: /unban [ban_id]",
         playerNotFound = "Player not found.",
         identifierError = "Could not find a valid identifier for this player.",
