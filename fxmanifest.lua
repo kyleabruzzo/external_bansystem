@@ -4,7 +4,7 @@ lua54 'yes'
 
 name 'Advanced Ban System'
 author 'kyle'
-version '1.0.0'
+version '1.0.1'
 description 'The most advanced ban system you can find out there'
 
 shared_scripts {
@@ -22,11 +22,9 @@ files {
     'modules/**/shared/*.lua',
     'modules/**/client.lua',
     'web/index.html',
-	'web/**/*',
+    'web/**/*',
 }
 
 server_scripts {
     'shared/secure_config.lua'
 }
-
-

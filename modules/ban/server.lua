@@ -19,10 +19,10 @@ function BanModule.new()
 end
 
 function BanModule:init()
-    if self.initialized then return end  
+    if self.initialized then return end
     self.initialized = true
     self.bans = {}
-    
+
     self:setupDatabase(function()
         self:loadBans()
     end)
@@ -35,7 +35,7 @@ end
 
 function BanModule:setupDatabase(callback)
     local tableName = "ban_system"
-    
+
     exports.oxmysql:execute([[
         CREATE TABLE IF NOT EXISTS ]] .. tableName .. [[ (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -44,7 +44,7 @@ function BanModule:setupDatabase(callback)
             target_name VARCHAR(255) NOT NULL,
             reason TEXT NOT NULL,
             admin_name VARCHAR(255) NOT NULL,
-            admin_identifier VARCHAR(100) NOT NULL, 
+            admin_identifier VARCHAR(100) NOT NULL,
             ban_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             unban_date TIMESTAMP NULL,
             is_active BOOLEAN DEFAULT TRUE,
@@ -64,7 +64,7 @@ end
 
 function BanModule:loadBans()
     self.bans = {}
-    exports.oxmysql:execute('SELECT * FROM ban_system WHERE is_active = ?', {1}, function(result)
+    exports.oxmysql:execute('SELECT * FROM ban_system WHERE is_active = ?', { 1 }, function(result)
         if result and #result > 0 then
             for _, banData in ipairs(result) do
                 if banData.identifiers then
@@ -89,16 +89,16 @@ function BanModule:registerCommands()
         if adminSource <= 0 then
             adminSource = nil
         end
-        
+
         self:handleBanCommand(adminSource, args)
     end, config.AdminOnly)
-    
+
     RegisterCommand(config.Commands.unban, function(source, args, rawCommand)
         local adminSource = source
         if adminSource <= 0 then
             adminSource = nil
         end
-        
+
         self:handleUnbanCommand(adminSource, args)
     end, config.AdminOnly)
 end
@@ -108,7 +108,7 @@ function BanModule:setupEventHandlers()
         if registeredServerEvents[eventName] then
             return
         end
-        
+
         registeredServerEvents[eventName] = true
         RegisterNetEvent(eventName)
         AddEventHandler(eventName, handler)
@@ -118,7 +118,7 @@ function BanModule:setupEventHandlers()
         local source = source
         local identifiers = self:getPlayerIdentifiers(source)
         deferrals.defer()
-        
+
         local initialCard = [[
         {
             "type": "AdaptiveCard",
@@ -144,7 +144,7 @@ function BanModule:setupEventHandlers()
         ]]
         deferrals.presentCard(initialCard)
         Wait(2000)
-    
+
         local verifyingCard = [[
         {
             "type": "AdaptiveCard",
@@ -170,7 +170,7 @@ function BanModule:setupEventHandlers()
         ]]
         deferrals.presentCard(verifyingCard)
         Wait(2000)
-        
+
         local banCheckCard = [[
         {
             "type": "AdaptiveCard",
@@ -196,12 +196,12 @@ function BanModule:setupEventHandlers()
         ]]
         deferrals.presentCard(banCheckCard)
         Wait(2200)
-        
+
         local activeBanCount = 0
         local activeBanData = nil
         local foundActiveBanIds = {}
         local activeBanIdentifier = nil
-    
+
         for _, identifier in pairs(identifiers) do
             if self.bans[identifier] and self.bans[identifier].is_active then
                 local banId = self.bans[identifier].id
@@ -213,21 +213,21 @@ function BanModule:setupEventHandlers()
                 activeBanIdentifier = identifier
             end
         end
-        
+
         local identifiersForQuery = {}
         for _, id in ipairs(identifiers) do
             table.insert(identifiersForQuery, id)
         end
-        
+
         local inactiveBanCount = 0
         local p = promise.new()
-        
+
         if #identifiersForQuery > 0 then
             local queryParams = {}
             for i, id in ipairs(identifiersForQuery) do
                 queryParams[i] = '"%' .. id .. '%"'
             end
-            
+
             local queryStr = "SELECT COUNT(DISTINCT id) as count FROM ban_system WHERE is_active = 0 AND ("
             for i, param in ipairs(queryParams) do
                 if i > 1 then
@@ -236,7 +236,7 @@ function BanModule:setupEventHandlers()
                 queryStr = queryStr .. "identifiers LIKE " .. param
             end
             queryStr = queryStr .. ")"
-            
+
             exports.oxmysql:execute(queryStr, {}, function(result)
                 if result and result[1] and result[1].count > 0 then
                     inactiveBanCount = result[1].count
@@ -246,9 +246,9 @@ function BanModule:setupEventHandlers()
         else
             p:resolve()
         end
-        
+
         Citizen.Await(p)
-        
+
         if activeBanCount > 0 or inactiveBanCount > 0 then
             local totalBans = activeBanCount + inactiveBanCount
             local resultCard = [[
@@ -266,7 +266,7 @@ function BanModule:setupEventHandlers()
                         "type": "TextBlock",
                         "text": "⚠️ Found %d ban record(s) in your history",
                         "wrap": true,
-                        "color": "Warning" 
+                        "color": "Warning"
                     },
                     {
                         "type": "TextBlock",
@@ -315,17 +315,18 @@ function BanModule:setupEventHandlers()
             deferrals.presentCard(resultCard)
             Wait(3000)
         end
-    
+
         if activeBanCount > 0 and activeBanData then
             local currentTime = os.time()
-            local banDate = activeBanData.ban_date and os.date("%Y-%m-%d %H:%M:%S", math.floor(activeBanData.ban_date / 1000)) or "Unknown"
+            local banDate = activeBanData.ban_date and
+                os.date("%Y-%m-%d %H:%M:%S", math.floor(activeBanData.ban_date / 1000)) or "Unknown"
             local unbanDate = activeBanData.unban_date and math.floor(activeBanData.unban_date / 1000) or nil
-            
+
             if unbanDate and currentTime > unbanDate then
                 if activeBanIdentifier then
                     self:setUnbanned(activeBanIdentifier)
                 end
-                
+
                 if inactiveBanCount > 0 then
                     local historyCard = [[
                     {
@@ -359,11 +360,11 @@ function BanModule:setupEventHandlers()
                     deferrals.presentCard(string.format(historyCard, inactiveBanCount))
                     Wait(4500)
                 end
-                
+
                 deferrals.done()
             else
                 local timeLeft = unbanDate and self:formatTimeLeft(unbanDate - currentTime) or "Permanent"
-                
+
                 local actions = ""
                 if config.UI and config.UI.appealInfo and config.UI.appealInfo.enabled and config.UI.appealInfo.showAppealButton then
                     actions = [[
@@ -376,12 +377,12 @@ function BanModule:setupEventHandlers()
                     ],
                     ]]
                 end
-                
+
                 local appealMessage = "You cannot appeal this ban at the moment."
                 if config.UI and config.UI.appealInfo and config.UI.appealInfo.enabled then
                     appealMessage = config.UI.appealInfo.message
                 end
-                
+
                 local finalCard = [[
                 {
                     "type": "AdaptiveCard",
@@ -563,15 +564,15 @@ function BanModule:setupEventHandlers()
                     ]
                 }
                 ]]
-                
-                deferrals.presentCard(string.format(finalCard, 
-                    activeBanData.ban_id, 
-                    activeBanData.reason, 
-                    activeBanData.admin_name, 
-                    banDate, 
+
+                deferrals.presentCard(string.format(finalCard,
+                    activeBanData.ban_id,
+                    activeBanData.reason,
+                    activeBanData.admin_name,
+                    banDate,
                     timeLeft)
                 )
-                
+
                 print(string.format(
                     "^3[Ban System] ^7Player ^2'%s' ^7attempted to connect while being banned.\n" ..
                     "^7Ban Details:\n" ..
@@ -580,11 +581,11 @@ function BanModule:setupEventHandlers()
                     "  ^5Admin: ^7%s\n" ..
                     "  ^5Ban Date: ^7%s\n" ..
                     "  ^5Time Left: ^7%s\n",
-                    name, 
-                    activeBanData.ban_id, 
-                    activeBanData.reason, 
-                    activeBanData.admin_name, 
-                    banDate, 
+                    name,
+                    activeBanData.ban_id,
+                    activeBanData.reason,
+                    activeBanData.admin_name,
+                    banDate,
                     timeLeft
                 ))
                 return
@@ -621,7 +622,7 @@ function BanModule:setupEventHandlers()
             ]]
             deferrals.presentCard(string.format(historyCard, inactiveBanCount))
             Wait(3500)
-            
+
             local finalCard = [[
             {
                 "type": "AdaptiveCard",
@@ -679,7 +680,7 @@ function BanModule:setupEventHandlers()
             deferrals.done()
         end
     end)
-    
+
     registerEventOnce("ban:openMenu", function(targetId)
         local source = source
         if self:isAdmin(source) then
@@ -696,71 +697,77 @@ function BanModule:setupEventHandlers()
             TriggerClientEvent("ban:showMenu", source, targetData, banList)
         end
     end)
-    
+
     RegisterEventOnce("ban:submitBan", function(data)
         local source = source
         if not self:isAdmin(source) then return end
-        
+
         if data.offline then
             self:banOfflinePlayer(source, data)
         else
             self:banPlayer(source, data.targetId, data.reason, data.duration)
         end
     end)
-    
+
     registerEventOnce("ban:submitUnban", function(banId)
         local source = source
         if not self:isAdmin(source) then return end
-        
+
         self:unbanPlayer(source, banId)
     end)
-    
+
     registerEventOnce("ban:editBan", function(data)
         local source = source
         if not self:isAdmin(source) then return end
-        
+
         self:editBan(source, data.ban_id, data.reason, data.duration)
     end)
-    
+
     RegisterEventOnce("ban:refreshBanList", function()
         local source = source
         if not self:isAdmin(source) then return end
-        
+
         self:getActiveBans(function(banList)
             TriggerClientEvent("ban:updateBanList", source, banList)
         end)
     end)
-    
+
     if not registeredServerEvents['callbacks_registered'] then
         registeredServerEvents['callbacks_registered'] = true
-        
+
         lib.callback.register('ban:getPlayerIdentifiers', function(source, targetId)
             if not self:isAdmin(source) then return nil end
-            
+
             if targetId and tonumber(targetId) > 0 then
                 return self:getPlayerIdentifiers(targetId)
             end
-            
+
             return nil
         end)
-        
+
         lib.callback.register('ban:getBanList', function(source)
             if not self:isAdmin(source) then return {} end
-            
+
             local promise = promise.new()
-            
+
             self:getActiveBans(function(bans)
                 promise:resolve(bans)
             end)
-            
+
             return Citizen.Await(promise)
+        end)
+        lib.callback.register('ban:getServerPlayers', function(source)
+            if not self:isAdmin(source) then return {} end
+
+            local players = bridge.getAllPlayers()
+            return players
         end)
     end
 end
 
 function BanModule:startBanRefreshTimer()
     local refreshInterval = 60
-    
+
     Citizen.CreateThread(function()
         while true do
             Citizen.Wait(refreshInterval * 1000)
@@ -773,9 +780,9 @@ function BanModule:handleBanCommand(adminSource, args)
     if #args < 2 then
         if adminSource then
             TriggerClientEvent('chat:addMessage', adminSource, {
-                color = {255, 0, 0},
+                color = { 255, 0, 0 },
                 multiline = true,
-                args = {"System", config.Messages.banUsage}
+                args = { "System", config.Messages.banUsage }
             })
         else
             logger:info(config.Messages.banUsage)
@@ -786,7 +793,7 @@ function BanModule:handleBanCommand(adminSource, args)
     local targetId = tonumber(args[1])
     table.remove(args, 1)
     local duration = nil
-    
+
     if args[1] then
         if args[1]:lower() == "permanent" or args[1]:lower() == "perm" then
             duration = "5475d"
@@ -796,30 +803,30 @@ function BanModule:handleBanCommand(adminSource, args)
             table.remove(args, 1)
         end
     end
-    
+
     local reason = table.concat(args, " ")
-    
+
     if reason == "" or not reason then
         if adminSource then
             TriggerClientEvent('chat:addMessage', adminSource, {
-                color = {255, 0, 0},
+                color = { 255, 0, 0 },
                 multiline = true,
-                args = {"System", "You must provide a ban reason."}
+                args = { "System", "You must provide a ban reason." }
             })
         else
             logger:error("Failed to ban: No reason provided")
         end
         return
     end
-    
+
     if targetId and targetId > 0 then
         self:banPlayer(adminSource, targetId, reason, duration)
     else
         if adminSource then
             TriggerClientEvent('chat:addMessage', adminSource, {
-                color = {255, 0, 0},
+                color = { 255, 0, 0 },
                 multiline = true,
-                args = {"System", config.Messages.playerNotFound}
+                args = { "System", config.Messages.playerNotFound }
             })
         else
             logger:error(config.Messages.playerNotFound)
@@ -831,30 +838,30 @@ function BanModule:handleUnbanCommand(adminSource, args)
     if #args < 1 then
         if adminSource then
             TriggerClientEvent('chat:addMessage', adminSource, {
-                color = {255, 0, 0},
+                color = { 255, 0, 0 },
                 multiline = true,
-                args = {"System", config.Messages.unbanUsage}
+                args = { "System", config.Messages.unbanUsage }
             })
         else
             logger:error(config.Messages.unbanUsage)
         end
         return
     end
-    
+
     local banId = tostring(args[1])
     if not banId then
         if adminSource then
             TriggerClientEvent('chat:addMessage', adminSource, {
-                color = {255, 0, 0},
+                color = { 255, 0, 0 },
                 multiline = true,
-                args = {"System", "Invalid Ban ID format."}
+                args = { "System", "Invalid Ban ID format." }
             })
         else
             logger:error("Invalid Ban ID format.")
         end
         return
     end
-    
+
     self:unbanPlayer(adminSource, banId)
 end
 
@@ -868,13 +875,13 @@ function BanModule:generateBanId()
             if isLetter then
                 randomChar = string.char(math.random(65, 90))
             else
-                randomChar = math.random(0, 9) 
+                randomChar = math.random(0, 9)
             end
             group = group .. randomChar
         end
         table.insert(code, group)
     end
-    return table.concat(code, "-") 
+    return table.concat(code, "-")
 end
 
 function BanModule:banPlayer(adminSource, targetId, reason, duration)
@@ -882,24 +889,24 @@ function BanModule:banPlayer(adminSource, targetId, reason, duration)
     if not targetName then
         if adminSource then
             TriggerClientEvent('chat:addMessage', adminSource, {
-                color = {255, 0, 0},
+                color = { 255, 0, 0 },
                 multiline = true,
-                args = {"System", config.Messages.playerNotFound}
+                args = { "System", config.Messages.playerNotFound }
             })
         else
             logger:error(config.Messages.playerNotFound)
         end
         return
     end
-    
+
     local adminName = "Console"
     local adminIdentifier = "console"
-    
+
     if adminSource then
         adminName = GetPlayerName(adminSource)
         adminIdentifier = self:getMainIdentifier(adminSource)
     end
-    
+
     local targetIdentifiers = self:getPlayerIdentifiers(targetId)
     local allIdentifiersJson = json.encode(targetIdentifiers)
     local banID = self:generateBanId()
@@ -907,34 +914,34 @@ function BanModule:banPlayer(adminSource, targetId, reason, duration)
     if #targetIdentifiers == 0 then
         if adminSource then
             TriggerClientEvent('chat:addMessage', adminSource, {
-                color = {255, 0, 0},
+                color = { 255, 0, 0 },
                 multiline = true,
-                args = {"System", config.Messages.identifierError}
+                args = { "System", config.Messages.identifierError }
             })
         else
             logger:error(config.Messages.identifierError)
         end
         return
     end
-    
+
     local unbanDate = nil
     if duration then
         unbanDate = self:calculateUnbanDate(duration)
     end
-    
+
     self:insertBanRecord(banID, allIdentifiersJson, targetName, reason, adminName, adminIdentifier, unbanDate, duration)
-    
-    local banMessage = string.format(config.Messages.banned, 
+
+    local banMessage = string.format(config.Messages.banned,
         banID,
-        reason, 
-        adminName, 
-        os.date("%Y-%m-%d %H:%M:%S"), 
+        reason,
+        adminName,
+        os.date("%Y-%m-%d %H:%M:%S"),
         duration and self:formatTimeLeft(self:parseDuration(duration)) or "permanent")
-    
+
     DropPlayer(targetId, banMessage)
-    
+
     webhook:sendBanWebhook(banID, targetName, allIdentifiersJson, reason, duration, adminName)
-    
+
     if adminSource then
         TriggerClientEvent('ban:banSuccess', adminSource, {
             targetName = targetName,
@@ -947,18 +954,18 @@ end
 function BanModule:banOfflinePlayer(adminSource, data)
     local adminName = "Console"
     local adminIdentifier = "console"
-    
+
     if adminSource then
         adminName = GetPlayerName(adminSource)
         adminIdentifier = self:getMainIdentifier(adminSource)
     end
-    
+
     local banID = self:generateBanId()
     local targetName = data.playerName or "Unknown (Offline)"
-    
+
     -- Create identifiers array from the provided data
     local identifiers = {}
-    
+
     -- Add each provided identifier to the array
     if data.license then table.insert(identifiers, "license:" .. data.license) end
     if data.license2 then table.insert(identifiers, "license2:" .. data.license2) end
@@ -966,28 +973,29 @@ function BanModule:banOfflinePlayer(adminSource, data)
     if data.ip then table.insert(identifiers, "ip:" .. data.ip) end
     if data.xbl then table.insert(identifiers, "xbl:" .. data.xbl) end
     if data.discord then table.insert(identifiers, "discord:" .. data.discord) end
-    
+
     if #identifiers == 0 and data.identifier then
         table.insert(identifiers, data.identifier)
     elseif #identifiers == 0 then
         if adminSource then
             TriggerClientEvent('chat:addMessage', adminSource, {
-                color = {255, 0, 0},
+                color = { 255, 0, 0 },
                 multiline = true,
-                args = {"System", "At least one identifier is required for an offline ban."}
+                args = { "System", "At least one identifier is required for an offline ban." }
             })
         end
         return
     end
-    
+
     local identifiersJson = json.encode(identifiers)
-    
+
     local unbanDate = nil
     if data.duration then
         unbanDate = self:calculateUnbanDate(data.duration)
     end
-    
-    self:insertBanRecord(banID, identifiersJson, targetName, data.reason, adminName, adminIdentifier, unbanDate, data.duration)
+
+    self:insertBanRecord(banID, identifiersJson, targetName, data.reason, adminName, adminIdentifier, unbanDate,
+        data.duration)
     webhook:sendBanWebhook(banID, targetName, identifiersJson, data.reason, data.duration, adminName)
     if adminSource then
         TriggerClientEvent('ban:banSuccess', adminSource, {
@@ -999,50 +1007,52 @@ function BanModule:banOfflinePlayer(adminSource, data)
 end
 
 function BanModule:unbanPlayer(adminSource, banId)
-    exports.oxmysql:execute('SELECT * FROM ban_system WHERE ban_id = ? AND is_active = ? LIMIT 1', {banId, 1}, function(result)
-        if result and result[1] then
-            self:setUnbannedById(banId, function()
-                self:getActiveBans(function(updatedBans)
-                    local adminName = "Console"
-                    
-                    if adminSource then
-                        adminName = GetPlayerName(adminSource)
-                        
-                        TriggerClientEvent('ban:updateBanList', adminSource, updatedBans)
-                        
-                        TriggerClientEvent('chat:addMessage', adminSource, {
-                            color = {0, 255, 0},
-                            multiline = true,
-                            args = {"System", string.format(config.Messages.unbanSuccess, result[1].target_name)}
-                        })
-                        
-                        TriggerClientEvent('ban:unbanSuccess', adminSource, {
-                            targetName = result[1].target_name
-                        })
-                    else
-                        logger:info(string.format(config.Messages.unbanSuccess, result[1].target_name))
-                    end
-                    
-                    webhook:sendUnbanWebhook(result[1].ban_id, result[1].target_name, result[1].identifiers, adminName)
+    exports.oxmysql:execute('SELECT * FROM ban_system WHERE ban_id = ? AND is_active = ? LIMIT 1', { banId, 1 },
+        function(result)
+            if result and result[1] then
+                self:setUnbannedById(banId, function()
+                    self:getActiveBans(function(updatedBans)
+                        local adminName = "Console"
+
+                        if adminSource then
+                            adminName = GetPlayerName(adminSource)
+
+                            TriggerClientEvent('ban:updateBanList', adminSource, updatedBans)
+
+                            TriggerClientEvent('chat:addMessage', adminSource, {
+                                color = { 0, 255, 0 },
+                                multiline = true,
+                                args = { "System", string.format(config.Messages.unbanSuccess, result[1].target_name) }
+                            })
+
+                            TriggerClientEvent('ban:unbanSuccess', adminSource, {
+                                targetName = result[1].target_name
+                            })
+                        else
+                            logger:info(string.format(config.Messages.unbanSuccess, result[1].target_name))
+                        end
+
+                        webhook:sendUnbanWebhook(result[1].ban_id, result[1].target_name, result[1].identifiers,
+                            adminName)
+                    end)
                 end)
-            end)
-        else
-            if adminSource then
-                TriggerClientEvent('chat:addMessage', adminSource, {
-                    color = {255, 0, 0},
-                    multiline = true,
-                    args = {"System", config.Messages.notBanned}
-                })
             else
-                logger:error(config.Messages.notBanned)
+                if adminSource then
+                    TriggerClientEvent('chat:addMessage', adminSource, {
+                        color = { 255, 0, 0 },
+                        multiline = true,
+                        args = { "System", config.Messages.notBanned }
+                    })
+                else
+                    logger:error(config.Messages.notBanned)
+                end
             end
-        end
-    end)
+        end)
 end
 
 function BanModule:setUnbannedById(banId, callback)
-    exports.oxmysql:execute('UPDATE ban_system SET is_active = 0 WHERE ban_id = ?', {banId}, function()
-        exports.oxmysql:execute('SELECT identifiers FROM ban_system WHERE ban_id = ?', {banId}, function(result)
+    exports.oxmysql:execute('UPDATE ban_system SET is_active = 0 WHERE ban_id = ?', { banId }, function()
+        exports.oxmysql:execute('SELECT identifiers FROM ban_system WHERE ban_id = ?', { banId }, function(result)
             if result and result[1] then
                 local identifiers = json.decode(result[1].identifiers)
                 if identifiers then
@@ -1052,7 +1062,7 @@ function BanModule:setUnbannedById(banId, callback)
                 end
             end
             self:loadBans()
-            
+
             if callback then
                 callback()
             end
@@ -1061,67 +1071,70 @@ function BanModule:setUnbannedById(banId, callback)
 end
 
 function BanModule:editBan(adminSource, banId, reason, duration)
-    exports.oxmysql:execute('SELECT * FROM ban_system WHERE ban_id = ? AND is_active = ? LIMIT 1', {banId, 1}, function(result)
-        if result and result[1] then
-            local unbanDate = nil
-            if duration then
-                unbanDate = self:calculateUnbanDate(duration)
-            end
-            
-            exports.oxmysql:execute('UPDATE ban_system SET reason = ?, unban_date = ?, duration = ? WHERE ban_id = ? AND is_active = 1', 
-                {reason, unbanDate, duration, banId}, 
-                function(updateResult)
-                    if updateResult and updateResult.affectedRows > 0 then
-                        local identifiers = json.decode(result[1].identifiers)
-                        if identifiers then
-                            for _, id in ipairs(identifiers) do
-                                if self.bans[id] then
-                                    self.bans[id].reason = reason
-                                    self.bans[id].unban_date = unbanDate
-                                    self.bans[id].duration = duration
+    exports.oxmysql:execute('SELECT * FROM ban_system WHERE ban_id = ? AND is_active = ? LIMIT 1', { banId, 1 },
+        function(result)
+            if result and result[1] then
+                local unbanDate = nil
+                if duration then
+                    unbanDate = self:calculateUnbanDate(duration)
+                end
+
+                exports.oxmysql:execute(
+                    'UPDATE ban_system SET reason = ?, unban_date = ?, duration = ? WHERE ban_id = ? AND is_active = 1',
+                    { reason, unbanDate, duration, banId },
+                    function(updateResult)
+                        if updateResult and updateResult.affectedRows > 0 then
+                            local identifiers = json.decode(result[1].identifiers)
+                            if identifiers then
+                                for _, id in ipairs(identifiers) do
+                                    if self.bans[id] then
+                                        self.bans[id].reason = reason
+                                        self.bans[id].unban_date = unbanDate
+                                        self.bans[id].duration = duration
+                                    end
                                 end
                             end
-                        end
-                        
-                        local adminName = "Console"
-                        local adminIdentifier = "console"
-                        
-                        if adminSource then
-                            adminName = GetPlayerName(adminSource)
-                            adminIdentifier = self:getMainIdentifier(adminSource)
-                        end
 
-                        webhook:sendEditBanWebhook(result[1].target_name, result[1].identifiers, reason, duration, adminName)
-                        
-                        -- Get updated ban list after changes
-                        self:getActiveBans(function(updatedBans)
+                            local adminName = "Console"
+                            local adminIdentifier = "console"
+
                             if adminSource then
-                                -- Send the updated list to the client
-                                TriggerClientEvent('ban:updateBanList', adminSource, updatedBans)
-                                
-                                TriggerClientEvent('ban:editSuccess', adminSource, {
-                                    targetName = result[1].target_name,
-                                    reason = reason,
-                                    duration = duration
-                                })
-                            else
-                                logger:info(string.format(config.Messages.banEditSuccess, result[1].target_name))
+                                adminName = GetPlayerName(adminSource)
+                                adminIdentifier = self:getMainIdentifier(adminSource)
                             end
-                        end)
-                    end
-                end)
-        else
-            if adminSource then
-                TriggerClientEvent('chat:addMessage', adminSource, {
-                    color = {255, 0, 0},
-                    multiline = true,
-                    args = {"System", config.Messages.notBanned}
-                })
+
+                            webhook:sendEditBanWebhook(result[1].target_name, result[1].identifiers, reason, duration,
+                                adminName)
+
+                            -- Get updated ban list after changes
+                            self:getActiveBans(function(updatedBans)
+                                if adminSource then
+                                    -- Send the updated list to the client
+                                    TriggerClientEvent('ban:updateBanList', adminSource, updatedBans)
+
+                                    TriggerClientEvent('ban:editSuccess', adminSource, {
+                                        targetName = result[1].target_name,
+                                        reason = reason,
+                                        duration = duration
+                                    })
+                                else
+                                    logger:info(string.format(config.Messages.banEditSuccess, result[1].target_name))
+                                end
+                            end)
+                        end
+                    end)
             else
-                logger:error(config.Messages.notBanned)
+                if adminSource then
+                    TriggerClientEvent('chat:addMessage', adminSource, {
+                        color = { 255, 0, 0 },
+                        multiline = true,
+                        args = { "System", config.Messages.notBanned }
+                    })
+                else
+                    logger:error(config.Messages.notBanned)
+                end
             end
-        end
-    end)
+        end)
 end
 
 function BanModule:setUnbanned(identifier)
@@ -1132,12 +1145,12 @@ function BanModule:setUnbanned(identifier)
                 if identifiers then
                     for _, id in ipairs(identifiers) do
                         if id == identifier then
-                            exports.oxmysql:execute('UPDATE ban_system SET is_active = 0 WHERE id = ?', {banData.id})
+                            exports.oxmysql:execute('UPDATE ban_system SET is_active = 0 WHERE id = ?', { banData.id })
 
                             for _, bannedId in ipairs(identifiers) do
                                 self.bans[bannedId] = nil
                             end
-                            
+
                             break
                         end
                     end
@@ -1147,12 +1160,14 @@ function BanModule:setUnbanned(identifier)
     end)
 end
 
-function BanModule:insertBanRecord(banid, identifiersJson, targetName, reason, adminName, adminIdentifier, unbanDate, duration)
-    exports.oxmysql:execute('INSERT INTO ban_system (ban_id, identifiers, target_name, reason, admin_name, admin_identifier, unban_date, duration) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        {banid, identifiersJson, targetName, reason, adminName, adminIdentifier, unbanDate, duration},
+function BanModule:insertBanRecord(banid, identifiersJson, targetName, reason, adminName, adminIdentifier, unbanDate,
+                                   duration)
+    exports.oxmysql:execute(
+        'INSERT INTO ban_system (ban_id, identifiers, target_name, reason, admin_name, admin_identifier, unban_date, duration) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        { banid, identifiersJson, targetName, reason, adminName, adminIdentifier, unbanDate, duration },
         function(result)
             if result and result.insertId then
-                exports.oxmysql:execute('SELECT * FROM ban_system WHERE id = ?', {result.insertId}, function(banData)
+                exports.oxmysql:execute('SELECT * FROM ban_system WHERE id = ?', { result.insertId }, function(banData)
                     if banData and banData[1] then
                         local identifiers = json.decode(identifiersJson)
                         if identifiers then
@@ -1167,62 +1182,63 @@ function BanModule:insertBanRecord(banid, identifiersJson, targetName, reason, a
 end
 
 function BanModule:getActiveBans(callback)
-    exports.oxmysql:execute('SELECT * FROM ban_system WHERE is_active = ? ORDER BY ban_date DESC', {1}, function(result)
-        local bans = {}
-        
-        if result and #result > 0 then
-            for _, banData in ipairs(result) do
-                if banData.identifiers then
-                    local identifiers = json.decode(banData.identifiers)
-                    if identifiers and #identifiers > 0 then
-                        banData.identifier = identifiers[1]
+    exports.oxmysql:execute('SELECT * FROM ban_system WHERE is_active = ? ORDER BY ban_date DESC', { 1 },
+        function(result)
+            local bans = {}
+
+            if result and #result > 0 then
+                for _, banData in ipairs(result) do
+                    if banData.identifiers then
+                        local identifiers = json.decode(banData.identifiers)
+                        if identifiers and #identifiers > 0 then
+                            banData.identifier = identifiers[1]
+                        end
                     end
+
+                    table.insert(bans, banData)
                 end
-                
-                table.insert(bans, banData)
+
+                if callback then
+                    callback(bans)
+                end
+            else
+                if callback then
+                    callback({})
+                end
             end
-            
-            if callback then
-                callback(bans)
-            end
-        else
-            if callback then
-                callback({})
-            end
-        end
-    end)
+        end)
 end
 
 function BanModule:isAdmin(source)
     if not source or source <= 0 then return true end
-    
+
     if config.AdminOnly then
         for _, group in ipairs(config.AdminGroups) do
             if bridge.hasPermission(source, group) then
                 return true
             end
         end
-        
+
         return false
     end
-    
+
     return true
 end
 
 function BanModule:getPlayerIdentifiers(source)
     local identifiers = {}
-    
+
     for i = 0, GetNumPlayerIdentifiers(source) - 1 do
         local identifier = GetPlayerIdentifier(source, i)
         identifiers[#identifiers + 1] = identifier
     end
-    
+
     return identifiers
 end
 
 function BanModule:getMainIdentifier(source)
     local identifiers = self:getPlayerIdentifiers(source)
-    
+
     for _, idType in ipairs(config.IdentifierPriority) do
         for _, id in ipairs(identifiers) do
             if string.find(id, idType .. ":") then
@@ -1230,7 +1246,7 @@ function BanModule:getMainIdentifier(source)
             end
         end
     end
-    
+
     return identifiers[1]
 end
 
@@ -1241,7 +1257,7 @@ end
 function BanModule:parseDuration(duration)
     local time = tonumber(string.match(duration, "%d+"))
     local unit = string.match(duration, "%a+")
-    
+
     if unit == "m" then
         return time * 60
     elseif unit == "h" then
@@ -1267,39 +1283,39 @@ function BanModule:formatTimeLeft(seconds)
     if seconds <= 0 then
         return "now"
     end
-    
+
     local timeTable = {}
-    
+
     local days = math.floor(seconds / 86400)
     if days > 0 then
         table.insert(timeTable, days .. " day" .. (days > 1 and "s" or ""))
         seconds = seconds - (days * 86400)
     end
-    
+
     local hours = math.floor(seconds / 3600)
     if hours > 0 then
         table.insert(timeTable, hours .. " hour" .. (hours > 1 and "s" or ""))
         seconds = seconds - (hours * 3600)
     end
-    
+
     local minutes = math.floor(seconds / 60)
     if minutes > 0 then
         table.insert(timeTable, minutes .. " minute" .. (minutes > 1 and "s" or ""))
         seconds = seconds - (minutes * 60)
     end
-    
+
     if seconds > 0 and #timeTable < 2 then
         table.insert(timeTable, seconds .. " second" .. (seconds > 1 and "s" or ""))
     end
-    
+
     if #timeTable <= 0 then
         return "0 seconds"
     end
-    
+
     if #timeTable == 1 then
         return timeTable[1]
     end
-    
+
     return table.concat(timeTable, ", ", 1, #timeTable - 1) .. " and " .. timeTable[#timeTable]
 end
 
