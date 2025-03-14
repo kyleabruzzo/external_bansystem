@@ -1,26 +1,29 @@
-$(function() {
+$(function () {
     let selectedPlayerId = null;
     let selectedIdentifier = null;
     let activeBans = [];
+    let inactiveBans = [];
+    let playerBanHistory = {};
+    let currentPlayerForHistory = null;
     let uiConfig = {
         durations: [],
     };
-    
-    
+
+
     function updateDurationOptions() {
         if (!uiConfig.durations || uiConfig.durations.length === 0) return;
-        
+
         const banDuration = $('#banDuration, #offlineBanDuration, #editBanDuration');
         banDuration.empty();
-        
+
         uiConfig.durations.forEach(duration => {
             banDuration.append(`<option value="${duration.value}">${duration.label}</option>`);
         });
-        
+
     }
 
     function fixButtonLayout() {
-        $('.submit-btn').each(function() {
+        $('.submit-btn').each(function () {
             if (!$(this).parent().hasClass('button-container')) {
                 $(this).wrap('<div class="button-container"></div>');
             }
@@ -29,8 +32,8 @@ $(function() {
 
     function setupResponsiveUI() {
         fixButtonLayout();
-        
-        $(window).on('resize', function() {
+
+        $(window).on('resize', function () {
             fixButtonLayout();
         });
     }
@@ -39,57 +42,62 @@ $(function() {
         if (uiConfig.durations && uiConfig.durations.length > 0) {
             const offlineDuration = $('#offlineBanDuration');
             offlineDuration.empty();
-            
+
             uiConfig.durations.forEach(duration => {
                 offlineDuration.append(`<option value="${duration.value}">${duration.label}</option>`);
             });
         }
     }
-    
-    window.addEventListener('message', function(event) {
+
+    window.addEventListener('message', function (event) {
         const data = event.data;
-        
+
         if (data.action === 'openBanMenu') {
-            
+
             if (data.config) {
                 uiConfig = data.config;
                 updateDurationOptions();
                 initOfflineBanUI();
             }
-            
+
+            if (data.inactiveBans && Array.isArray(data.inactiveBans)) {
+                inactiveBans = data.inactiveBans;
+                renderInactiveBanList(processInactiveBans(inactiveBans));
+            }
+
             $.post(`https://${GetParentResourceName()}/refreshBanList`, JSON.stringify({}));
             $('.container').fadeIn(300);
-            
+
             if (data.target) {
                 $('#selectedPlayerName').text(data.target.name);
                 $('#selectedPlayerId').text(`ID: ${data.target.source}`);
                 selectedPlayerId = data.target.source;
-                
+
                 $('.selected-player-avatar').addClass('pulse-animation');
                 setTimeout(() => {
                     $('.selected-player-avatar').removeClass('pulse-animation');
                 }, 2000);
-                
+
                 if (data.target.identifiers && data.target.identifiers.length > 0) {
                     selectedIdentifier = data.target.identifiers[0];
                 }
             }
-            
+
             if (data.bans && Array.isArray(data.bans)) {
                 activeBans = data.bans;
                 renderBanList(activeBans);
             }
-            
-            $.post(`https://${GetParentResourceName()}/getPlayers`, {}, function(response) {
+
+            $.post(`https://${GetParentResourceName()}/getPlayers`, {}, function (response) {
                 if (response.success && response.data) {
                     renderPlayerList(response.data);
                 }
             });
-            
+
             if (data.activeTab) {
                 switchTab(data.activeTab);
             } else {
-                switchTab('ban'); 
+                switchTab('ban');
             }
             setupResponsiveUI();
         } else if (data.action === 'closeBanMenu') {
@@ -105,25 +113,214 @@ $(function() {
             }
         } else if (data.action === 'notification') {
             showNotification(data.type, data.title || getNotificationTitle(data.type), data.message);
+        } else if (data.action === 'updateInactiveBanList') {
+            if (data.bans && Array.isArray(data.bans)) {
+                inactiveBans = data.bans;
+                renderInactiveBanList(processInactiveBans(inactiveBans));
+            }
+        } else if (data.action === 'updatePlayerBanHistory') {
+            if (data.history && Array.isArray(data.history)) {
+                playerBanHistory = data.history;
+                renderPlayerBanHistory(playerBanHistory);
+            }
         }
     });
-    
-    
-    
+
+
+    function processInactiveBans(bans) {
+        if (!bans || bans.length === 0) return [];
+        const playerGroups = {};
+
+        bans.forEach(ban => {
+            if (!playerGroups[ban.target_name]) {
+                playerGroups[ban.target_name] = {
+                    name: ban.target_name,
+                    count: 0,
+                    bans: [],
+                    latestBan: null
+                };
+            }
+
+            playerGroups[ban.target_name].count++;
+            playerGroups[ban.target_name].bans.push(ban);
+
+            if (!playerGroups[ban.target_name].latestBan ||
+                new Date(ban.ban_date) > new Date(playerGroups[ban.target_name].latestBan.ban_date)) {
+                playerGroups[ban.target_name].latestBan = ban;
+            }
+        });
+
+        return Object.values(playerGroups).sort((a, b) => b.count - a.count);
+    }
+
+    function renderInactiveBanList(playerGroups) {
+        const inactiveBanListBody = $('#inactiveBanListBody');
+        inactiveBanListBody.empty();
+
+        if (!playerGroups || playerGroups.length === 0) {
+            inactiveBanListBody.html(`
+                <tr>
+                    <td colspan="5">
+                        <div class="empty-history">
+                            <i class="fas fa-check-circle"></i>
+                            <p>No past bans found in the system.</p>
+                        </div>
+                    </td>
+                </tr>
+            `);
+            return;
+        }
+
+        playerGroups.forEach(player => {
+            const banItem = $(`
+                <tr data-player="${escapeHtml(player.name)}">
+                    <td><span class="ban-id">${player.latestBan.ban_id}</span></td>
+                    <td>${escapeHtml(player.name)}</td>
+                    <td><span class="ban-count-badge">${player.count}</span></td>
+                    <td>${formatDate(player.latestBan.ban_date)}</td>
+                    <td>
+                        <div class="ban-actions">
+                            <button class="view-history-btn" data-identifier="${player.latestBan.identifier}">
+                                <i class="fas fa-history"></i> View History
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `);
+
+            banItem.find('.view-history-btn').on('click', function () {
+                const identifier = $(this).data('identifier');
+                currentPlayerForHistory = player.name;
+
+                $('#historyPlayerName').text(player.name);
+                $('#banHistoryBody').html(`
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 30px;">
+                            <i class="fas fa-spinner fa-spin" style="font-size: 24px; color: var(--text-muted);"></i>
+                            <div style="margin-top: 10px; color: var(--text-muted);">Loading ban history...</div>
+                        </td>
+                    </tr>
+                `);
+                $('#banHistoryModal').fadeIn(200).css('display', 'flex');
+
+                $.post(`https://${GetParentResourceName()}/getPlayerBanHistory`, JSON.stringify({
+                    identifier: identifier
+                }), function (response) {
+                    if (response.success && response.history) {
+                        playerBanHistory = response.history;
+                        renderPlayerBanHistory(playerBanHistory);
+                    } else {
+                        $('#banHistoryBody').html(`
+                            <tr>
+                                <td colspan="6">
+                                    <div class="empty-history">
+                                        <i class="fas fa-exclamation-circle"></i>
+                                        <p>Failed to load ban history for this player.</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        `);
+                    }
+                });
+            });
+
+            inactiveBanListBody.append(banItem);
+        });
+    }
+
+    function renderPlayerBanHistory(history) {
+        const banHistoryBody = $('#banHistoryBody');
+        banHistoryBody.empty();
+
+        if (!history || history.length === 0) {
+            banHistoryBody.html(`
+            <tr>
+                <td colspan="6">
+                    <div class="empty-history">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <p>No ban history found for this player.</p>
+                    </div>
+                </td>
+            </tr>
+        `);
+            return;
+        }
+
+        $('#historyPlayerName').text(currentPlayerForHistory || 'Player');
+
+        history.sort((a, b) => new Date(b.ban_date) - new Date(a.ban_date));
+
+        history.forEach(ban => {
+            let badgeClass = "permanent";
+            let durationDisplay;
+
+            if (ban.duration) {
+                if (ban.duration.toString() === "5475d") {
+                    durationDisplay = "Permanent";
+                    badgeClass = "permanent";
+                } else {
+                    const durationString = ban.duration.toString();
+                    const durationMatch = durationString.match(/(\d+)([a-z])/i);
+
+                    if (durationMatch) {
+                        const value = parseInt(durationMatch[1], 10);
+                        const unit = durationMatch[2].toLowerCase();
+
+                        if (unit === 'd' && value <= 3) {
+                            badgeClass = "short";
+                        } else if ((unit === 'd' && value <= 14) || unit === 'h') {
+                            badgeClass = "medium";
+                        } else if (unit === 'd' && value <= 30) {
+                            badgeClass = "long";
+                        } else {
+                            badgeClass = "very-long";
+                        }
+                    } else {
+                        badgeClass = "permanent";
+                    }
+
+                    durationDisplay = ban.duration;
+                }
+            } else {
+                durationDisplay = "Permanent";
+                badgeClass = "permanent";
+            }
+
+            const durationBadge = `<span class="duration-badge ${badgeClass}">${durationDisplay}</span>`;
+
+            const statusBadge = ban.is_active
+                ? `<span class="status-badge active">Active</span>`
+                : `<span class="status-badge inactive">Expired</span>`;
+
+            const historyItem = $(`
+            <tr>
+                <td><span class="ban-id">${ban.ban_id}</span></td>
+                <td>${escapeHtml(ban.reason)}</td>
+                <td>${escapeHtml(ban.admin_name)}</td>
+                <td>${formatDate(ban.ban_date)}</td>
+                <td>${durationBadge}</td>
+                <td>${statusBadge}</td>
+            </tr>
+        `);
+
+            banHistoryBody.append(historyItem);
+        });
+    }
+
     function getNotificationTitle(type) {
-        switch(type) {
+        switch (type) {
             case 'success': return 'Success';
             case 'error': return 'Error';
             case 'warning': return 'Warning';
             default: return 'Information';
         }
     }
-    
+
     function showNotification(type, title, message) {
-        const icon = type === 'success' ? 'fas fa-check-circle' : 
-                    type === 'error' ? 'fas fa-exclamation-triangle' :
-                    type === 'warning' ? 'fas fa-exclamation-circle' : 'fas fa-info-circle';
-        
+        const icon = type === 'success' ? 'fas fa-check-circle' :
+            type === 'error' ? 'fas fa-exclamation-triangle' :
+                type === 'warning' ? 'fas fa-exclamation-circle' : 'fas fa-info-circle';
+
         const notification = $(`
             <div class="notification ${type}">
                 <i class="${icon}"></i>
@@ -134,26 +331,26 @@ $(function() {
                 <div class="notification-close"><i class="fas fa-times"></i></div>
             </div>
         `);
-        
-        notification.find('.notification-close').on('click', function() {
-            notification.fadeOut(300, function() {
+
+        notification.find('.notification-close').on('click', function () {
+            notification.fadeOut(300, function () {
                 notification.remove();
             });
         });
-        
+
         $('#notificationContainer').append(notification);
-        
+
         setTimeout(() => {
-            notification.fadeOut(300, function() {
+            notification.fadeOut(300, function () {
                 notification.remove();
             });
         }, 5000);
     }
-    
+
     function renderPlayerList(players) {
         const playerList = $('#playerList');
         playerList.empty();
-        
+
         if (!players || players.length === 0) {
             playerList.html(`
                 <div class="no-players">
@@ -163,7 +360,7 @@ $(function() {
             `);
             return;
         }
-        
+
         players.forEach(player => {
             const playerItem = $(`
                 <div class="player-item" data-id="${player.id}">
@@ -171,25 +368,25 @@ $(function() {
                     <div class="player-id">ID: ${player.id}</div>
                 </div>
             `);
-            
-            playerItem.on('click', function() {
+
+            playerItem.on('click', function () {
                 $('.player-item').removeClass('selected');
                 $(this).addClass('selected');
-                
+
                 const playerId = $(this).data('id');
-                
+
                 $('#selectedPlayerName').text(player.name);
                 $('#selectedPlayerId').text(`ID: ${player.id}`);
                 selectedPlayerId = player.id;
-                
+
                 $('.selected-player-avatar').addClass('pulse-animation');
                 setTimeout(() => {
                     $('.selected-player-avatar').removeClass('pulse-animation');
                 }, 2000);
-                
+
                 $.post(`https://${GetParentResourceName()}/getPlayerIdentifiers`, JSON.stringify({
                     playerId: playerId
-                }), function(response) {
+                }), function (response) {
                     if (response.success && response.target) {
                         if (response.target.identifiers && response.target.identifiers.length > 0) {
                             selectedIdentifier = response.target.identifiers[0];
@@ -197,15 +394,15 @@ $(function() {
                     }
                 });
             });
-            
+
             playerList.append(playerItem);
         });
     }
-    
+
     function renderBanList(bans) {
         const banListBody = $('#banListBody');
         banListBody.empty();
-        
+
         if (!bans || bans.length === 0) {
             banListBody.html(`
                 <tr>
@@ -219,11 +416,11 @@ $(function() {
             `);
             return;
         }
-        
+
         bans.forEach(ban => {
             let badgeClass = "permanent";
             let durationDisplay;
-    
+
             if (ban.duration) {
                 if (ban.duration.toString() === "5475d") {
                     durationDisplay = "Permanent";
@@ -231,11 +428,11 @@ $(function() {
                 } else {
                     const durationString = ban.duration.toString();
                     const durationMatch = durationString.match(/(\d+)([a-z])/i);
-                    
+
                     if (durationMatch) {
                         const value = parseInt(durationMatch[1], 10);
                         const unit = durationMatch[2].toLowerCase();
-                        
+
                         if (unit === 'd' && value <= 3) {
                             badgeClass = "short";
                         } else if ((unit === 'd' && value <= 14) || unit === 'h') {
@@ -248,16 +445,16 @@ $(function() {
                     } else {
                         badgeClass = "permanent";
                     }
-                    
+
                     durationDisplay = ban.duration;
                 }
             } else {
                 durationDisplay = "Permanent";
                 badgeClass = "permanent";
             }
-    
+
             const durationBadge = `<span class="duration-badge ${badgeClass}">${durationDisplay}</span>`;
-            
+
             const banItem = $(`
                 <tr data-id="${ban.id}" data-ban-id="${ban.ban_id}">
                     <td><span class="ban-id">${ban.ban_id}</span></td>
@@ -274,56 +471,55 @@ $(function() {
                     </td>
                 </tr>
             `);
-            
-            banItem.find('.edit-ban').on('click', function() {
+
+            banItem.find('.edit-ban').on('click', function () {
                 const row = $(this).closest('tr');
                 const banId = row.data('ban-id');
                 const banData = getBanDataById(banId);
-                
+
                 if (banData) {
                     $('#editBanReason').val(banData.reason);
                     $('#editBanDuration').val(banData.duration || '');
                     $('#editBanId').val(banData.ban_id);
-                    
+
                     $('#editBanModal').fadeIn(200).css('display', 'flex');
                 }
             });
-            
-            banItem.find('.unban-btn').on('click', function() {
+
+            banItem.find('.unban-btn').on('click', function () {
                 const row = $(this).closest('tr');
                 const banId = row.data('ban-id');
-                
-                // Disable the button during processing
+
                 $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Processing...');
-            
+
                 $.post(`https://${GetParentResourceName()}/submitUnban`, JSON.stringify({
                     banId: banId
-                }), function() {
+                }), function () {
                     showNotification('success', 'Player Unbanned', 'The player has been unbanned successfully.');
-                    
+
                 });
             });
-            
+
             banListBody.append(banItem);
         });
     }
-    
+
     function getBanDataById(banId) {
         return activeBans.find(ban => ban.ban_id === banId);
     }
-    
+
     function formatDate(dateString) {
         const date = new Date(dateString);
         return `${date.getFullYear()}-${padZero(date.getMonth() + 1)}-${padZero(date.getDate())} ${padZero(date.getHours())}:${padZero(date.getMinutes())}`;
     }
-    
+
     function padZero(num) {
         return num.toString().padStart(2, '0');
     }
-    
+
     function escapeHtml(text) {
         if (!text) return '';
-        
+
         const map = {
             '&': '&amp;',
             '<': '&lt;',
@@ -331,89 +527,89 @@ $(function() {
             '"': '&quot;',
             "'": '&#039;'
         };
-        
+
         return text.toString().replace(/[&<>"']/g, m => map[m]);
     }
-    
+
     function switchTab(tabName) {
         $('.tab').removeClass('active');
         $(`.tab[data-tab="${tabName}"]`).addClass('active');
-        
+
         $('.tab-content').removeClass('active').hide();
         $(`#${tabName}Tab`).show().addClass('active');
     }
-    
-    $('.tab').on('click', function() {
+
+    $('.tab').on('click', function () {
         const tabName = $(this).data('tab');
-        
+
         $.post(`https://${GetParentResourceName()}/switchTab`, JSON.stringify({
             tab: tabName
         }));
-        
+
         switchTab(tabName);
     });
-    
-    $('#closeButton').on('click', function() {
+
+    $('#closeButton').on('click', function () {
         $.post(`https://${GetParentResourceName()}/exitUI`, JSON.stringify({}));
     });
-    
-    $('#submitBanBtn').on('click', function() {
+
+    $('#submitBanBtn').on('click', function () {
         if (!selectedPlayerId) {
             showNotification('error', 'Error', 'Please select a player to ban');
             return;
         }
-        
+
         const reason = $('#banReason').val();
         if (!reason) {
             showNotification('error', 'Error', 'Please enter a ban reason');
             return;
         }
-        
+
         const duration = $('#banDuration').val();
-        
+
         $.post(`https://${GetParentResourceName()}/submitBan`, JSON.stringify({
             targetId: selectedPlayerId,
             reason: reason,
             duration: duration,
             offline: false
         }));
-        
+
         $('#banReason').val('');
         $('#banDuration').val('');
-        
+
         showNotification('success', 'Player Banned', 'The player has been banned successfully.');
     });
-    
-    $('#submitOfflineBanBtn').on('click', function() {
+
+    $('#submitOfflineBanBtn').on('click', function () {
         const playerName = $('#offlinePlayerName').val();
         if (!playerName) {
             showNotification('error', 'Error', 'Please enter a player name');
             return;
         }
-        
+
         const license = $('#offlineLicense').val();
         const license2 = $('#offlineLicense2').val();
         const steam = $('#offlineSteam').val();
         const discord = $('#offlineDiscord').val();
         const ip = $('#offlineIP').val();
         const xbl = $('#offlineXBL').val();
-        
+
         if (!license && !license2 && !steam && !discord && !ip && !xbl) {
             showNotification('error', 'Error', 'Please enter at least one player identifier');
             return;
         }
-        
+
         const reason = $('#offlineBanReason').val();
         if (!reason) {
             showNotification('error', 'Error', 'Please enter a ban reason');
             return;
         }
-        
+
         const duration = $('#offlineBanDuration').val();
-        
+
         $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Processing...');
         const btn = $(this);
-        
+
         $.post(`https://${GetParentResourceName()}/submitBan`, JSON.stringify({
             playerName: playerName,
             license: license,
@@ -425,10 +621,9 @@ $(function() {
             reason: reason,
             duration: duration,
             offline: true
-        }), function() {
-            // Reset button state
+        }), function () {
             btn.prop('disabled', false).html('<i class="fas fa-user-slash"></i> Ban Offline Player');
-            
+
             $('#offlinePlayerName').val('');
             $('#offlineLicense').val('');
             $('#offlineLicense2').val('');
@@ -438,73 +633,72 @@ $(function() {
             $('#offlineXBL').val('');
             $('#offlineBanReason').val('');
             $('#offlineBanDuration').val(uiConfig.durations[0]?.value || '');
-            
+
             showNotification('success', 'Offline Player Banned', 'The offline player has been banned successfully.');
-        }).fail(function() {
+        }).fail(function () {
             btn.prop('disabled', false).html('<i class="fas fa-user-slash"></i> Ban Offline Player');
             showNotification('error', 'Error', 'Failed to ban player. Please try again.');
         });
     });
-    
-    $('#submitEditBanBtn').on('click', function() {
+
+    $('#submitEditBanBtn').on('click', function () {
         const banId = $('#editBanId').val();
         const reason = $('#editBanReason').val();
         const duration = $('#editBanDuration').val();
-        
+
         if (!banId || !reason) {
             showNotification('error', 'Error', 'Ban ID and reason are required');
             return;
         }
-        
-        // Show processing state
+
         $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Processing...');
-        
+
         $.post(`https://${GetParentResourceName()}/editBan`, JSON.stringify({
             ban_id: banId,
             reason: reason,
             duration: duration
-        }), function() {
+        }), function () {
             $('#editBanModal').fadeOut(200);
             $('#submitEditBanBtn').prop('disabled', false).html('<i class="fas fa-save"></i> Save Changes');
             showNotification('success', 'Ban Updated', 'The ban has been updated successfully.');
-            
+
         });
     });
-    
-    $('#closeEditModal').on('click', function() {
+
+    $('#closeEditModal').on('click', function () {
         $('#editBanModal').fadeOut(200);
     });
-    
-    $('#refreshBanList').on('click', function() {
+
+    $('#refreshBanList').on('click', function () {
         $(this).addClass('rotating');
-        
-        $.post(`https://${GetParentResourceName()}/refreshBanList`, JSON.stringify({}), function(response) { 
+
+        $.post(`https://${GetParentResourceName()}/refreshBanList`, JSON.stringify({}), function (response) {
             setTimeout(() => {
                 $('#refreshBanList').removeClass('rotating');
             }, 1000);
         });
     });
-    
-    $('#refreshPlayerList').on('click', function() {
+
+    $('#refreshPlayerList').on('click', function () {
         $(this).addClass('rotating');
         setTimeout(() => {
             $(this).removeClass('rotating');
         }, 1000);
-        
-        $.post(`https://${GetParentResourceName()}/getPlayers`, {}, function(response) {
+
+        $.post(`https://${GetParentResourceName()}/getPlayers`, {}, function (response) {
             if (response.success && response.data) {
                 renderPlayerList(response.data);
             }
         });
     });
-    
-    $('#playerSearch').on('input', function() {
+
+    $('#playerSearch').on('input', function () {
         const searchTerm = $(this).val().toLowerCase();
-        
-        $('.player-item').each(function() {
+
+        $('.player-item').each(function () {
             const playerName = $(this).find('.player-name').text().toLowerCase();
             const playerId = $(this).find('.player-id').text().toLowerCase();
-            
+
             if (playerName.includes(searchTerm) || playerId.includes(searchTerm)) {
                 $(this).show();
             } else {
@@ -512,26 +706,50 @@ $(function() {
             }
         });
     });
-    
-    $('#banListSearch').on('input', function() {
+
+    $('#banListSearch').on('input', function () {
         const searchTerm = $(this).val().toLowerCase();
-        
-        $('#banListBody tr').each(function() {
-            const visible = Array.from($(this).find('td')).some(cell => 
+
+        $('#banListBody tr').each(function () {
+            const visible = Array.from($(this).find('td')).some(cell =>
                 $(cell).text().toLowerCase().includes(searchTerm)
             );
-            
+
             $(this).toggle(visible);
         });
     });
-    
 
-    
-    $(document).keyup(function(e) {
+    $('#refreshInactiveBanList').on('click', function () {
+        $(this).addClass('rotating');
+
+        $.post(`https://${GetParentResourceName()}/refreshInactiveBanList`, JSON.stringify({}), function () {
+            setTimeout(() => {
+                $('#refreshInactiveBanList').removeClass('rotating');
+            }, 1000);
+        });
+    });
+
+    $('#inactiveBanListSearch').on('input', function () {
+        const searchTerm = $(this).val().toLowerCase();
+
+        $('#inactiveBanListBody tr').each(function () {
+            const visible = Array.from($(this).find('td')).some(cell =>
+                $(cell).text().toLowerCase().includes(searchTerm)
+            );
+
+            $(this).toggle(visible);
+        });
+    });
+
+    $('#closeBanHistoryModal, #closeBanHistoryBtn').on('click', function () {
+        $('#banHistoryModal').fadeOut(200);
+    });
+
+    $(document).keyup(function (e) {
         if (e.key === "Escape") {
             $.post(`https://${GetParentResourceName()}/exitUI`, JSON.stringify({}));
         }
     });
-    
+
     $.post(`https://${GetParentResourceName()}/appLoaded`, JSON.stringify({}));
 });

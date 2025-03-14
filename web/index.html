@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -16,7 +18,7 @@
             </div>
             <div class="close-btn" id="closeButton"><i class="fas fa-times"></i></div>
         </div>
-        
+
         <div class="tabs">
             <div class="tab active" data-tab="ban">
                 <i class="fas fa-gavel"></i>
@@ -30,8 +32,12 @@
                 <i class="fas fa-list"></i>
                 <span>Ban List</span>
             </div>
+            <div class="tab" data-tab="history">
+                <i class="fas fa-history"></i>
+                <span>Past Bans</span>
+            </div>
         </div>
-        
+
         <div class="content">
             <div class="tab-content active" id="banTab">
                 <div class="player-list-container">
@@ -42,7 +48,7 @@
                     </div>
                     <div class="player-list" id="playerList"></div>
                 </div>
-                
+
                 <div class="ban-form">
                     <div class="form-group">
                         <label>Selected Player</label>
@@ -56,7 +62,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="banReason">
                             <i class="fas fa-comment-alt"></i>
@@ -64,7 +70,7 @@
                         </label>
                         <textarea id="banReason" placeholder="Enter ban reason..."></textarea>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="banDuration">
                             <i class="fas fa-clock"></i>
@@ -82,14 +88,14 @@
                             <option value="30d">30 Days</option>
                         </select>
                     </div>
-                    
+
                     <button class="submit-btn" id="submitBanBtn">
                         <i class="fas fa-ban"></i>
                         Ban Player
                     </button>
                 </div>
             </div>
-            
+
             <div class="tab-content" id="offlineTab">
                 <div class="offline-ban-form">
                     <div class="offline-form-layout">
@@ -101,7 +107,7 @@
                                 </label>
                                 <input type="text" id="offlinePlayerName" placeholder="Enter player name...">
                             </div>
-                            
+
                             <div class="form-group">
                                 <label for="offlineBanReason">
                                     <i class="fas fa-comment-alt"></i>
@@ -109,57 +115,57 @@
                                 </label>
                                 <textarea id="offlineBanReason" placeholder="Enter ban reason..."></textarea>
                             </div>
-                            
+
                             <div class="form-group">
                                 <label for="offlineBanDuration">
                                     <i class="fas fa-clock"></i>
                                     Ban Duration
                                 </label>
                                 <select id="offlineBanDuration">
-                                    
+
                                 </select>
                             </div>
                         </div>
-                        
+
                         <div class="offline-column">
                             <div class="identifiers-block">
                                 <label>
                                     <i class="fas fa-fingerprint"></i>
                                     Player Identifiers
                                 </label>
-                                
+
                                 <div class="identifiers-grid">
                                     <div class="id-input">
                                         <span>License</span>
                                         <input type="text" id="offlineLicense" placeholder="License ID...">
                                     </div>
-                                    
+
                                     <div class="id-input">
                                         <span>License2</span>
                                         <input type="text" id="offlineLicense2" placeholder="License2 ID...">
                                     </div>
-                                    
+
                                     <div class="id-input">
                                         <span>Steam</span>
                                         <input type="text" id="offlineSteam" placeholder="Steam ID...">
                                     </div>
-                                    
+
                                     <div class="id-input">
                                         <span>Discord</span>
                                         <input type="text" id="offlineDiscord" placeholder="Discord ID...">
                                     </div>
-                                    
+
                                     <div class="id-input">
                                         <span>IP</span>
                                         <input type="text" id="offlineIP" placeholder="IP address...">
                                     </div>
-                                    
+
                                     <div class="id-input">
                                         <span>XBL</span>
                                         <input type="text" id="offlineXBL" placeholder="XBL ID...">
                                     </div>
                                 </div>
-                                
+
                                 <div class="id-info">
                                     <i class="fas fa-info-circle"></i>
                                     <span>Enter at least one identifier without prefix (e.g. numbers only)</span>
@@ -167,14 +173,14 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <button class="submit-btn" id="submitOfflineBanBtn">
                         <i class="fas fa-user-slash"></i>
                         Ban Offline Player
                     </button>
                 </div>
             </div>
-            
+
             <div class="tab-content" id="listTab">
                 <div class="ban-list-header">
                     <div class="refresh-btn" id="refreshBanList"><i class="fas fa-sync-alt"></i></div>
@@ -183,7 +189,7 @@
                         <input type="text" id="banListSearch" placeholder="Search bans...">
                     </div>
                 </div>
-                
+
                 <div class="ban-list-container">
                     <table class="ban-list">
                         <thead>
@@ -202,15 +208,41 @@
                     </table>
                 </div>
             </div>
+
+            <div class="tab-content" id="historyTab">
+                <div class="ban-list-header">
+                    <div class="refresh-btn" id="refreshInactiveBanList"><i class="fas fa-sync-alt"></i></div>
+                    <div class="search-wrapper">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="inactiveBanListSearch" placeholder="Search past bans...">
+                    </div>
+                </div>
+
+                <div class="ban-list-container">
+                    <table class="ban-list">
+                        <thead>
+                            <tr>
+                                <th><i class="fas fa-hashtag"></i> Ban ID</th>
+                                <th><i class="fas fa-user"></i> Player</th>
+                                <th><i class="fas fa-ban"></i> Total Bans</th>
+                                <th><i class="fas fa-calendar"></i> Last Ban Date</th>
+                                <th><i class="fas fa-cogs"></i> Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inactiveBanListBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-        
+
         <div class="modal" id="editBanModal">
             <div class="modal-content">
                 <div class="modal-header">
                     <h2><i class="fas fa-edit"></i> Edit Ban</h2>
                     <div class="close-modal" id="closeEditModal"><i class="fas fa-times"></i></div>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="editBanReason">
                         <i class="fas fa-comment-alt"></i>
@@ -218,7 +250,7 @@
                     </label>
                     <textarea id="editBanReason" placeholder="Enter new ban reason..."></textarea>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="editBanDuration">
                         <i class="fas fa-clock"></i>
@@ -236,9 +268,9 @@
                         <option value="30d">30 Days</option>
                     </select>
                 </div>
-                
+
                 <input type="hidden" id="editBanId">
-                
+
                 <div class="modal-actions">
                     <button class="submit-btn" id="submitEditBanBtn">
                         <i class="fas fa-save"></i>
@@ -248,10 +280,44 @@
             </div>
         </div>
 
+        <div class="modal" id="banHistoryModal">
+            <div class="modal-content ban-history-modal">
+                <div class="modal-header">
+                    <h2><i class="fas fa-history"></i> Ban History for <span id="historyPlayerName"></span></h2>
+                    <div class="close-modal" id="closeBanHistoryModal"><i class="fas fa-times"></i></div>
+                </div>
+
+                <div class="ban-history-container">
+                    <table class="ban-history-table">
+                        <thead>
+                            <tr>
+                                <th><i class="fas fa-hashtag"></i> Ban ID</th>
+                                <th><i class="fas fa-comment"></i> Reason</th>
+                                <th><i class="fas fa-user-shield"></i> Admin</th>
+                                <th><i class="fas fa-calendar"></i> Ban Date</th>
+                                <th><i class="fas fa-hourglass-half"></i> Duration</th>
+                                <th><i class="fas fa-check-circle"></i> Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="banHistoryBody">
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="modal-actions">
+                    <button class="close-btn-secondary" id="closeBanHistoryBtn">
+                        <i class="fas fa-times"></i>
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <div class="notification-container" id="notificationContainer"></div>
     </div>
-    
+
     <script src="nui://game/ui/jquery.js"></script>
     <script src="app.js"></script>
 </body>
+
 </html>

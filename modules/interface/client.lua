@@ -11,6 +11,8 @@ local interface = {
         loaded = false,
         currentTarget = nil,
         banList = {},
+        inactiveBanList = {},
+        playerBanHistory = {},
         activeTab = 'ban'
     }
 }
@@ -20,7 +22,10 @@ local recentNotifications = {}
 function interface:openBanUI(targetData, banlist)
     self.store.currentTarget = targetData or nil
     local result = lib.callback.await('ban:getBanList', false)
+    local inactiveResult = lib.callback.await('ban:getInactiveBans', false)
     self.store.banList = result or {}
+    self.store.inactiveBanList = inactiveResult or {}
+
     self:toggle(true)
 end
 
@@ -37,6 +42,37 @@ function interface:updateBanList(banlist)
         end
     else
         logger:warn("Received invalid banlist data")
+    end
+end
+
+function interface:updateInactiveBanList(banlist)
+    if banlist and type(banlist) == "table" then
+        self.store.inactiveBanList = banlist
+
+        if self.store.visible then
+            logger:info("Updating inactive ban list in UI with " .. #banlist .. " items")
+            SendNUIMessage({
+                action = 'updateInactiveBanList',
+                bans = banlist
+            })
+        end
+    else
+        logger:warn("Received invalid inactive banlist data")
+    end
+end
+
+function interface:updatePlayerBanHistory(banHistory)
+    if banHistory and type(banHistory) == "table" then
+        self.store.playerBanHistory = banHistory
+
+        if self.store.visible then
+            SendNUIMessage({
+                action = 'updatePlayerBanHistory',
+                history = banHistory
+            })
+        end
+    else
+        logger:warn("Received invalid player ban history data")
     end
 end
 
@@ -58,6 +94,7 @@ function interface:toggle(state)
         action = state and 'openBanMenu' or 'closeBanMenu',
         target = self.store.currentTarget,
         bans = self.store.banList,
+        inactiveBans = self.store.inactiveBanList,
         activeTab = self.store.activeTab,
         config = state and { durations = config.UI.durations } or nil
     })
@@ -208,6 +245,37 @@ function interface:registerCallbacks()
     RegisterEventOnce('ban:editSuccess', function(data)
         if interface.store.visible then
             TriggerServerEvent('ban:refreshBanList')
+        end
+    end)
+
+    RegisterEventOnce("ban:updateInactiveBanList", function(banlist)
+        interface:updateInactiveBanList(banlist)
+    end)
+
+    RegisterEventOnce("ban:receivePlayerBanHistory", function(banHistory)
+        interface:updatePlayerBanHistory(banHistory)
+    end)
+
+    RegisterNUICallback('refreshInactiveBanList', function(_, cb)
+        TriggerServerEvent('ban:getInactiveBans')
+        Wait(100)
+        cb({ success = true })
+    end)
+
+    RegisterNUICallback('getPlayerBanHistory', function(data, cb)
+        if data.identifier then
+            local history = lib.callback.await('ban:getPlayerBanHistory', false, data.identifier)
+
+            if history then
+                cb({
+                    success = true,
+                    history = history
+                })
+            else
+                cb({ success = false })
+            end
+        else
+            cb({ success = false })
         end
     end)
 

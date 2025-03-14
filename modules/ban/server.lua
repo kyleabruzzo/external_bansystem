@@ -732,6 +732,24 @@ function BanModule:setupEventHandlers()
         end)
     end)
 
+    registerEventOnce("ban:getInactiveBans", function()
+        local source = source
+        if not self:isAdmin(source) then return end
+
+        self:getInactiveBans(function(banList)
+            TriggerClientEvent("ban:updateInactiveBanList", source, banList)
+        end)
+    end)
+
+    registerEventOnce("ban:getPlayerBanHistory", function(identifier)
+        local source = source
+        if not self:isAdmin(source) then return end
+
+        self:getPlayerBanHistory(identifier, function(banHistory)
+            TriggerClientEvent("ban:receivePlayerBanHistory", source, banHistory)
+        end)
+    end)
+
     if not registeredServerEvents['callbacks_registered'] then
         registeredServerEvents['callbacks_registered'] = true
 
@@ -756,11 +774,36 @@ function BanModule:setupEventHandlers()
 
             return Citizen.Await(promise)
         end)
+
         lib.callback.register('ban:getServerPlayers', function(source)
             if not self:isAdmin(source) then return {} end
 
             local players = bridge.getAllPlayers()
             return players
+        end)
+
+        lib.callback.register('ban:getInactiveBans', function(source)
+            if not self:isAdmin(source) then return {} end
+
+            local promise = promise.new()
+
+            self:getInactiveBans(function(bans)
+                promise:resolve(bans)
+            end)
+
+            return Citizen.Await(promise)
+        end)
+
+        lib.callback.register('ban:getPlayerBanHistory', function(source, identifier)
+            if not self:isAdmin(source) then return {} end
+
+            local promise = promise.new()
+
+            self:getPlayerBanHistory(identifier, function(bans)
+                promise:resolve(bans)
+            end)
+
+            return Citizen.Await(promise)
         end)
     end
 end
@@ -963,10 +1006,8 @@ function BanModule:banOfflinePlayer(adminSource, data)
     local banID = self:generateBanId()
     local targetName = data.playerName or "Unknown (Offline)"
 
-    -- Create identifiers array from the provided data
     local identifiers = {}
 
-    -- Add each provided identifier to the array
     if data.license then table.insert(identifiers, "license:" .. data.license) end
     if data.license2 then table.insert(identifiers, "license2:" .. data.license2) end
     if data.steam then table.insert(identifiers, "steam:" .. data.steam) end
@@ -1106,10 +1147,8 @@ function BanModule:editBan(adminSource, banId, reason, duration)
                             webhook:sendEditBanWebhook(result[1].target_name, result[1].identifiers, reason, duration,
                                 adminName)
 
-                            -- Get updated ban list after changes
                             self:getActiveBans(function(updatedBans)
                                 if adminSource then
-                                    -- Send the updated list to the client
                                     TriggerClientEvent('ban:updateBanList', adminSource, updatedBans)
 
                                     TriggerClientEvent('ban:editSuccess', adminSource, {
@@ -1195,6 +1234,62 @@ function BanModule:getActiveBans(callback)
                         end
                     end
 
+                    table.insert(bans, banData)
+                end
+
+                if callback then
+                    callback(bans)
+                end
+            else
+                if callback then
+                    callback({})
+                end
+            end
+        end)
+end
+
+function BanModule:getInactiveBans(callback)
+    exports.oxmysql:execute('SELECT * FROM ban_system WHERE is_active = ? ORDER BY ban_date DESC', { 0 },
+        function(result)
+            local bans = {}
+
+            if result and #result > 0 then
+                for _, banData in ipairs(result) do
+                    if banData.identifiers then
+                        local identifiers = json.decode(banData.identifiers)
+                        if identifiers and #identifiers > 0 then
+                            banData.identifier = identifiers[1]
+                        end
+                    end
+
+                    table.insert(bans, banData)
+                end
+
+                if callback then
+                    callback(bans)
+                end
+            else
+                if callback then
+                    callback({})
+                end
+            end
+        end)
+end
+
+function BanModule:getPlayerBanHistory(identifier, callback)
+    if not identifier then
+        callback({})
+        return
+    end
+
+    exports.oxmysql:execute(
+        'SELECT * FROM ban_system WHERE identifiers LIKE ? ORDER BY ban_date DESC',
+        { '%' .. identifier .. '%' },
+        function(result)
+            local bans = {}
+
+            if result and #result > 0 then
+                for _, banData in ipairs(result) do
                     table.insert(bans, banData)
                 end
 
