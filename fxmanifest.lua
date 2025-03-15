@@ -4,7 +4,7 @@ lua54 'yes'
 
 name 'Advanced Ban System'
 author 'kyle'
-version '1.0.2'
+version '1.0.3'
 description 'The most advanced ban system you can find out there'
 
 shared_scripts {

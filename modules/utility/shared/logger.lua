@@ -8,15 +8,16 @@ local colors = {
     success = "^2",
     warn = "^3",
     info = "^5",
-    uptodate = "^4",   
-    outdated = "^6"    
+    uptodate = "^4",
+    outdated = "^6",
+    debug = "^8"
 }
 
 local resourceName = ("[^6%s^7]"):format(GetCurrentResourceName())
 
 local function formatMessage(prefix, message, ...)
-    local args = {...}
-    
+    local args = { ... }
+
     for i = 1, #args do
         if type(args[i]) == "table" then
             args[i] = json.encode(args[i])
@@ -24,12 +25,12 @@ local function formatMessage(prefix, message, ...)
             args[i] = tostring(args[i])
         end
     end
-    
+
     local fullMessage = tostring(message)
     if #args > 0 then
         fullMessage = fullMessage .. " " .. table.concat(args, " ")
     end
-    
+
     return ("%s %s%s%s"):format(resourceName, prefix, fullMessage, colors.default)
 end
 
@@ -61,6 +62,10 @@ end
 
 function logger:versionCheckerError(message, ...)
     logIfDebug(colors.outdated, "[OUTDATED] ", message, ...)
+end
+
+function logger:debug(message, ...)
+    logIfDebug(colors.debug, "[DEBUG] ", message, ...)
 end
 
 return logger

@@ -15,6 +15,7 @@ local registeredServerEvents = {}
 function BanModule.new()
     local self = setmetatable({}, BanModule)
     self.bans = {}
+    self.registeredServerEvents = {}
     return self
 end
 
@@ -31,6 +32,24 @@ function BanModule:init()
     self:setupEventHandlers()
     logger:success("Ban module initialized")
     MarkInitialized('ban_server')
+end
+
+function BanModule:sanitizeInput(input)
+    if not input then return nil end
+
+    if type(input) == "string" then
+        return input:gsub("'", ""):gsub(";", ""):gsub("-%-", ""):gsub("/", ""):gsub("\\", "")
+    elseif type(input) == "number" then
+        return input
+    elseif type(input) == "table" then
+        local sanitized = {}
+        for k, v in pairs(input) do
+            sanitized[self:sanitizeInput(k)] = self:sanitizeInput(v)
+        end
+        return sanitized
+    else
+        return input
+    end
 end
 
 function BanModule:setupDatabase(callback)
@@ -62,9 +81,35 @@ function BanModule:setupDatabase(callback)
     end)
 end
 
+function BanModule:executeSafeQuery(query, params, callback)
+    if type(query) ~= "string" then
+        logger:error("Invalid SQL query format")
+        if callback then callback(nil) end
+        return
+    end
+
+    if params ~= nil and type(params) ~= "table" then
+        params = { params }
+    end
+
+    if params then
+        for i, param in pairs(params) do
+            if type(param) == "string" then
+                params[i] = self:sanitizeInput(param)
+            end
+        end
+    end
+
+    exports.oxmysql:execute(query, params, function(result)
+        if callback then
+            callback(result)
+        end
+    end)
+end
+
 function BanModule:loadBans()
     self.bans = {}
-    exports.oxmysql:execute('SELECT * FROM ban_system WHERE is_active = ?', { 1 }, function(result)
+    self:executeSafeQuery('SELECT * FROM ban_system WHERE is_active = ?', { 1 }, function(result)
         if result and #result > 0 then
             for _, banData in ipairs(result) do
                 if banData.identifiers then
@@ -103,16 +148,72 @@ function BanModule:registerCommands()
     end, config.AdminOnly)
 end
 
-function BanModule:setupEventHandlers()
-    local function registerEventOnce(eventName, handler)
-        if registeredServerEvents[eventName] then
-            return
+local allowedServerEvents = {
+    "ban:openMenu",
+    "ban:submitBan",
+    "ban:submitUnban",
+    "ban:editBan",
+    "ban:refreshBanList",
+    "ban:getInactiveBans",
+    "ban:getPlayerBanHistory",
+    "playerConnecting"
+}
+
+function BanModule:registerSecureServerEvent(eventName, handler)
+    local isAllowed = false
+    for _, allowedEvent in ipairs(allowedServerEvents) do
+        if eventName == allowedEvent then
+            isAllowed = true
+            break
+        end
+    end
+
+    if not isAllowed then
+        logger:error("Attempted to register non-whitelisted event: " .. eventName)
+        return
+    end
+
+    if self.registeredServerEvents[eventName] then
+        return
+    end
+
+    self.registeredServerEvents[eventName] = true
+    RegisterNetEvent(eventName)
+    AddEventHandler(eventName, function(...)
+        local source = source
+        if not source or source <= 0 then
+            logger:warn("Event " .. eventName .. " triggered from console")
         end
 
-        registeredServerEvents[eventName] = true
-        RegisterNetEvent(eventName)
-        AddEventHandler(eventName, handler)
+        handler(...)
+    end)
+end
+
+function BanModule:checkBansWithSafeQuery(identifiersForQuery, callback)
+    local placeholders = {}
+    local params = { 0 }
+
+    for i = 1, #identifiersForQuery do
+        table.insert(placeholders, "identifiers LIKE ?")
+        table.insert(params, "%" .. self:sanitizeInput(identifiersForQuery[i]) .. "%")
     end
+
+    local queryStr = string.format(
+        "SELECT COUNT(DISTINCT id) as count FROM ban_system WHERE is_active = ? AND (%s)",
+        table.concat(placeholders, " OR ")
+    )
+
+    exports.oxmysql:execute(queryStr, params, function(result)
+        local count = 0
+        if result and result[1] and result[1].count > 0 then
+            count = result[1].count
+        end
+        callback(count)
+    end)
+end
+
+function BanModule:setupEventHandlers()
+    self.registeredServerEvents = {}
 
     AddEventHandler('playerConnecting', function(name, setKickReason, deferrals)
         local source = source
@@ -223,24 +324,8 @@ function BanModule:setupEventHandlers()
         local p = promise.new()
 
         if #identifiersForQuery > 0 then
-            local queryParams = {}
-            for i, id in ipairs(identifiersForQuery) do
-                queryParams[i] = '"%' .. id .. '%"'
-            end
-
-            local queryStr = "SELECT COUNT(DISTINCT id) as count FROM ban_system WHERE is_active = 0 AND ("
-            for i, param in ipairs(queryParams) do
-                if i > 1 then
-                    queryStr = queryStr .. " OR "
-                end
-                queryStr = queryStr .. "identifiers LIKE " .. param
-            end
-            queryStr = queryStr .. ")"
-
-            exports.oxmysql:execute(queryStr, {}, function(result)
-                if result and result[1] and result[1].count > 0 then
-                    inactiveBanCount = result[1].count
-                end
+            self:checkBansWithSafeQuery(identifiersForQuery, function(count)
+                inactiveBanCount = count
                 p:resolve()
             end)
         else
@@ -681,7 +766,7 @@ function BanModule:setupEventHandlers()
         end
     end)
 
-    registerEventOnce("ban:openMenu", function(targetId)
+    self:registerSecureServerEvent("ban:openMenu", function(targetId)
         local source = source
         if self:isAdmin(source) then
             local targetData = nil
@@ -698,9 +783,16 @@ function BanModule:setupEventHandlers()
         end
     end)
 
-    RegisterEventOnce("ban:submitBan", function(data)
+    self:registerSecureServerEvent("ban:submitBan", function(data)
         local source = source
         if not self:isAdmin(source) then return end
+
+        if not data or type(data) ~= "table" then
+            logger:error("Invalid data format for ban:submitBan")
+            return
+        end
+
+        data = self:sanitizeInput(data)
 
         if data.offline then
             self:banOfflinePlayer(source, data)
@@ -709,21 +801,28 @@ function BanModule:setupEventHandlers()
         end
     end)
 
-    registerEventOnce("ban:submitUnban", function(banId)
+    self:registerSecureServerEvent("ban:submitUnban", function(banId)
         local source = source
         if not self:isAdmin(source) then return end
 
-        self:unbanPlayer(source, banId)
+        self:unbanPlayer(source, self:sanitizeInput(banId))
     end)
 
-    registerEventOnce("ban:editBan", function(data)
+    self:registerSecureServerEvent("ban:editBan", function(data)
         local source = source
         if not self:isAdmin(source) then return end
+
+        if not data or type(data) ~= "table" then
+            logger:error("Invalid data format for ban:editBan")
+            return
+        end
+
+        data = self:sanitizeInput(data)
 
         self:editBan(source, data.ban_id, data.reason, data.duration)
     end)
 
-    RegisterEventOnce("ban:refreshBanList", function()
+    self:registerSecureServerEvent("ban:refreshBanList", function()
         local source = source
         if not self:isAdmin(source) then return end
 
@@ -732,7 +831,7 @@ function BanModule:setupEventHandlers()
         end)
     end)
 
-    registerEventOnce("ban:getInactiveBans", function()
+    self:registerSecureServerEvent("ban:getInactiveBans", function()
         local source = source
         if not self:isAdmin(source) then return end
 
@@ -741,20 +840,29 @@ function BanModule:setupEventHandlers()
         end)
     end)
 
-    registerEventOnce("ban:getPlayerBanHistory", function(identifier)
+    self:registerSecureServerEvent("ban:getPlayerBanHistory", function(identifier)
         local source = source
         if not self:isAdmin(source) then return end
 
-        self:getPlayerBanHistory(identifier, function(banHistory)
+        self:getPlayerBanHistory(self:sanitizeInput(identifier), function(banHistory)
             TriggerClientEvent("ban:receivePlayerBanHistory", source, banHistory)
         end)
     end)
 
-    if not registeredServerEvents['callbacks_registered'] then
-        registeredServerEvents['callbacks_registered'] = true
+    self:setupSecureCallbacks()
+end
+
+function BanModule:setupSecureCallbacks()
+    if not self.registeredServerEvents['callbacks_registered'] then
+        self.registeredServerEvents['callbacks_registered'] = true
 
         lib.callback.register('ban:getPlayerIdentifiers', function(source, targetId)
             if not self:isAdmin(source) then return nil end
+
+            if bridge.isRateLimited(source, 'getPlayerIdentifiers') then
+                logger:warn("Rate limit exceeded for ban:getPlayerIdentifiers by source: " .. source)
+                return nil
+            end
 
             if targetId and tonumber(targetId) > 0 then
                 return self:getPlayerIdentifiers(targetId)
@@ -765,6 +873,11 @@ function BanModule:setupEventHandlers()
 
         lib.callback.register('ban:getBanList', function(source)
             if not self:isAdmin(source) then return {} end
+
+            if bridge.isRateLimited(source, 'getBanList') then
+                logger:warn("Rate limit exceeded for ban:getBanList by source: " .. source)
+                return {}
+            end
 
             local promise = promise.new()
 
@@ -778,12 +891,22 @@ function BanModule:setupEventHandlers()
         lib.callback.register('ban:getServerPlayers', function(source)
             if not self:isAdmin(source) then return {} end
 
+            if bridge.isRateLimited(source, 'getServerPlayers') then
+                logger:warn("Rate limit exceeded for ban:getServerPlayers by source: " .. source)
+                return {}
+            end
+
             local players = bridge.getAllPlayers()
             return players
         end)
 
         lib.callback.register('ban:getInactiveBans', function(source)
             if not self:isAdmin(source) then return {} end
+
+            if bridge.isRateLimited(source, 'getInactiveBans') then
+                logger:warn("Rate limit exceeded for ban:getInactiveBans by source: " .. source)
+                return {}
+            end
 
             local promise = promise.new()
 
@@ -796,6 +919,18 @@ function BanModule:setupEventHandlers()
 
         lib.callback.register('ban:getPlayerBanHistory', function(source, identifier)
             if not self:isAdmin(source) then return {} end
+
+            if bridge.isRateLimited(source, 'getPlayerBanHistory') then
+                logger:warn("Rate limit exceeded for ban:getPlayerBanHistory by source: " .. source)
+                return {}
+            end
+
+            if identifier and type(identifier) == "string" then
+                identifier = self:sanitizeInput(identifier)
+            else
+                logger:warn("Invalid identifier format in ban:getPlayerBanHistory from source: " .. source)
+                return {}
+            end
 
             local promise = promise.new()
 
@@ -811,9 +946,9 @@ end
 function BanModule:startBanRefreshTimer()
     local refreshInterval = 60
 
-    Citizen.CreateThread(function()
+    CreateThread(function()
         while true do
-            Citizen.Wait(refreshInterval * 1000)
+            Wait(refreshInterval * 1000)
             self:loadBans()
         end
     end)
@@ -848,6 +983,7 @@ function BanModule:handleBanCommand(adminSource, args)
     end
 
     local reason = table.concat(args, " ")
+    reason = self:sanitizeInput(reason)
 
     if reason == "" or not reason then
         if adminSource then
@@ -892,6 +1028,8 @@ function BanModule:handleUnbanCommand(adminSource, args)
     end
 
     local banId = tostring(args[1])
+    banId = self:sanitizeInput(banId)
+
     if not banId then
         if adminSource then
             TriggerClientEvent('chat:addMessage', adminSource, {
@@ -928,9 +1066,13 @@ function BanModule:generateBanId()
 end
 
 function BanModule:banPlayer(adminSource, targetId, reason, duration)
+    targetId = tonumber(self:sanitizeInput(targetId))
+    reason = self:sanitizeInput(reason)
+    duration = self:sanitizeInput(duration)
+
     local targetName = GetPlayerName(targetId)
     if not targetName then
-        if adminSource then
+        if adminSource > 0 then
             TriggerClientEvent('chat:addMessage', adminSource, {
                 color = { 255, 0, 0 },
                 multiline = true,
@@ -945,7 +1087,7 @@ function BanModule:banPlayer(adminSource, targetId, reason, duration)
     local adminName = "Console"
     local adminIdentifier = "console"
 
-    if adminSource then
+    if adminSource > 0 then
         adminName = GetPlayerName(adminSource)
         adminIdentifier = self:getMainIdentifier(adminSource)
     end
@@ -955,7 +1097,7 @@ function BanModule:banPlayer(adminSource, targetId, reason, duration)
     local banID = self:generateBanId()
 
     if #targetIdentifiers == 0 then
-        if adminSource then
+        if adminSource > 0 then
             TriggerClientEvent('chat:addMessage', adminSource, {
                 color = { 255, 0, 0 },
                 multiline = true,
@@ -972,7 +1114,23 @@ function BanModule:banPlayer(adminSource, targetId, reason, duration)
         unbanDate = self:calculateUnbanDate(duration)
     end
 
-    self:insertBanRecord(banID, allIdentifiersJson, targetName, reason, adminName, adminIdentifier, unbanDate, duration)
+    self:executeSafeQuery(
+        'INSERT INTO ban_system (ban_id, identifiers, target_name, reason, admin_name, admin_identifier, unban_date, duration) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        { banID, allIdentifiersJson, targetName, reason, adminName, adminIdentifier, unbanDate, duration },
+        function(result)
+            if result and result.insertId then
+                self:executeSafeQuery('SELECT * FROM ban_system WHERE id = ?', { result.insertId }, function(banData)
+                    if banData and banData[1] then
+                        local identifiers = json.decode(allIdentifiersJson)
+                        if identifiers then
+                            for _, id in ipairs(identifiers) do
+                                self.bans[id] = banData[1]
+                            end
+                        end
+                    end
+                end)
+            end
+        end)
 
     local banMessage = string.format(config.Messages.banned,
         banID,
@@ -985,7 +1143,7 @@ function BanModule:banPlayer(adminSource, targetId, reason, duration)
 
     webhook:sendBanWebhook(banID, targetName, allIdentifiersJson, reason, duration, adminName)
 
-    if adminSource then
+    if adminSource > 0 then
         TriggerClientEvent('ban:banSuccess', adminSource, {
             targetName = targetName,
             reason = reason,
@@ -995,6 +1153,8 @@ function BanModule:banPlayer(adminSource, targetId, reason, duration)
 end
 
 function BanModule:banOfflinePlayer(adminSource, data)
+    data = self:sanitizeInput(data)
+
     local adminName = "Console"
     local adminIdentifier = "console"
 
@@ -1035,8 +1195,24 @@ function BanModule:banOfflinePlayer(adminSource, data)
         unbanDate = self:calculateUnbanDate(data.duration)
     end
 
-    self:insertBanRecord(banID, identifiersJson, targetName, data.reason, adminName, adminIdentifier, unbanDate,
-        data.duration)
+    self:executeSafeQuery(
+        'INSERT INTO ban_system (ban_id, identifiers, target_name, reason, admin_name, admin_identifier, unban_date, duration) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        { banID, identifiersJson, targetName, data.reason, adminName, adminIdentifier, unbanDate, data.duration },
+        function(result)
+            if result and result.insertId then
+                self:executeSafeQuery('SELECT * FROM ban_system WHERE id = ?', { result.insertId }, function(banData)
+                    if banData and banData[1] then
+                        local identifiersArr = json.decode(identifiersJson)
+                        if identifiersArr then
+                            for _, id in ipairs(identifiersArr) do
+                                self.bans[id] = banData[1]
+                            end
+                        end
+                    end
+                end)
+            end
+        end)
+
     webhook:sendBanWebhook(banID, targetName, identifiersJson, data.reason, data.duration, adminName)
     if adminSource then
         TriggerClientEvent('ban:banSuccess', adminSource, {
@@ -1048,7 +1224,9 @@ function BanModule:banOfflinePlayer(adminSource, data)
 end
 
 function BanModule:unbanPlayer(adminSource, banId)
-    exports.oxmysql:execute('SELECT * FROM ban_system WHERE ban_id = ? AND is_active = ? LIMIT 1', { banId, 1 },
+    banId = self:sanitizeInput(banId)
+
+    self:executeSafeQuery('SELECT * FROM ban_system WHERE ban_id = ? AND is_active = ? LIMIT 1', { banId, 1 },
         function(result)
             if result and result[1] then
                 self:setUnbannedById(banId, function()
@@ -1092,8 +1270,8 @@ function BanModule:unbanPlayer(adminSource, banId)
 end
 
 function BanModule:setUnbannedById(banId, callback)
-    exports.oxmysql:execute('UPDATE ban_system SET is_active = 0 WHERE ban_id = ?', { banId }, function()
-        exports.oxmysql:execute('SELECT identifiers FROM ban_system WHERE ban_id = ?', { banId }, function(result)
+    self:executeSafeQuery('UPDATE ban_system SET is_active = 0 WHERE ban_id = ?', { banId }, function()
+        self:executeSafeQuery('SELECT identifiers FROM ban_system WHERE ban_id = ?', { banId }, function(result)
             if result and result[1] then
                 local identifiers = json.decode(result[1].identifiers)
                 if identifiers then
@@ -1111,8 +1289,37 @@ function BanModule:setUnbannedById(banId, callback)
     end)
 end
 
+function BanModule:setUnbanned(identifier)
+    identifier = self:sanitizeInput(identifier)
+
+    self:executeSafeQuery('SELECT * FROM ban_system WHERE is_active = 1', {}, function(result)
+        if result then
+            for _, banData in ipairs(result) do
+                local identifiers = json.decode(banData.identifiers)
+                if identifiers then
+                    for _, id in ipairs(identifiers) do
+                        if id == identifier then
+                            self:executeSafeQuery('UPDATE ban_system SET is_active = 0 WHERE id = ?', { banData.id })
+
+                            for _, bannedId in ipairs(identifiers) do
+                                self.bans[bannedId] = nil
+                            end
+
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
 function BanModule:editBan(adminSource, banId, reason, duration)
-    exports.oxmysql:execute('SELECT * FROM ban_system WHERE ban_id = ? AND is_active = ? LIMIT 1', { banId, 1 },
+    banId = self:sanitizeInput(banId)
+    reason = self:sanitizeInput(reason)
+    duration = self:sanitizeInput(duration)
+
+    self:executeSafeQuery('SELECT * FROM ban_system WHERE ban_id = ? AND is_active = ? LIMIT 1', { banId, 1 },
         function(result)
             if result and result[1] then
                 local unbanDate = nil
@@ -1120,7 +1327,7 @@ function BanModule:editBan(adminSource, banId, reason, duration)
                     unbanDate = self:calculateUnbanDate(duration)
                 end
 
-                exports.oxmysql:execute(
+                self:executeSafeQuery(
                     'UPDATE ban_system SET reason = ?, unban_date = ?, duration = ? WHERE ban_id = ? AND is_active = 1',
                     { reason, unbanDate, duration, banId },
                     function(updateResult)
@@ -1176,52 +1383,8 @@ function BanModule:editBan(adminSource, banId, reason, duration)
         end)
 end
 
-function BanModule:setUnbanned(identifier)
-    exports.oxmysql:execute('SELECT * FROM ban_system WHERE is_active = 1', {}, function(result)
-        if result then
-            for _, banData in ipairs(result) do
-                local identifiers = json.decode(banData.identifiers)
-                if identifiers then
-                    for _, id in ipairs(identifiers) do
-                        if id == identifier then
-                            exports.oxmysql:execute('UPDATE ban_system SET is_active = 0 WHERE id = ?', { banData.id })
-
-                            for _, bannedId in ipairs(identifiers) do
-                                self.bans[bannedId] = nil
-                            end
-
-                            break
-                        end
-                    end
-                end
-            end
-        end
-    end)
-end
-
-function BanModule:insertBanRecord(banid, identifiersJson, targetName, reason, adminName, adminIdentifier, unbanDate,
-                                   duration)
-    exports.oxmysql:execute(
-        'INSERT INTO ban_system (ban_id, identifiers, target_name, reason, admin_name, admin_identifier, unban_date, duration) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        { banid, identifiersJson, targetName, reason, adminName, adminIdentifier, unbanDate, duration },
-        function(result)
-            if result and result.insertId then
-                exports.oxmysql:execute('SELECT * FROM ban_system WHERE id = ?', { result.insertId }, function(banData)
-                    if banData and banData[1] then
-                        local identifiers = json.decode(identifiersJson)
-                        if identifiers then
-                            for _, id in ipairs(identifiers) do
-                                self.bans[id] = banData[1]
-                            end
-                        end
-                    end
-                end)
-            end
-        end)
-end
-
 function BanModule:getActiveBans(callback)
-    exports.oxmysql:execute('SELECT * FROM ban_system WHERE is_active = ? ORDER BY ban_date DESC', { 1 },
+    self:executeSafeQuery('SELECT * FROM ban_system WHERE is_active = ? ORDER BY ban_date DESC', { 1 },
         function(result)
             local bans = {}
 
@@ -1249,7 +1412,7 @@ function BanModule:getActiveBans(callback)
 end
 
 function BanModule:getInactiveBans(callback)
-    exports.oxmysql:execute('SELECT * FROM ban_system WHERE is_active = ? ORDER BY ban_date DESC', { 0 },
+    self:executeSafeQuery('SELECT * FROM ban_system WHERE is_active = ? ORDER BY ban_date DESC', { 0 },
         function(result)
             local bans = {}
 
@@ -1282,9 +1445,9 @@ function BanModule:getPlayerBanHistory(identifier, callback)
         return
     end
 
-    exports.oxmysql:execute(
+    self:executeSafeQuery(
         'SELECT * FROM ban_system WHERE identifiers LIKE ? ORDER BY ban_date DESC',
-        { '%' .. identifier .. '%' },
+        { '%' .. self:sanitizeInput(identifier) .. '%' },
         function(result)
             local bans = {}
 
